@@ -1,2 +1,2 @@
-import AreasPage from '@/components/areas/AreasPage';
-export default function Page() { return <AreasPage />; }
+import { redirect } from 'next/navigation';
+export default function Page() { redirect('/projects'); }

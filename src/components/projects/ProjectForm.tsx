@@ -2,14 +2,12 @@
 
 import { useState } from 'react';
 import { Project, Priority, ProjectStatus } from '@/types';
-import { PRIORITY_LABELS, PROJECT_STATUS_LABELS, todayISO } from '@/lib/utils';
-import { FORM_INPUT, FORM_SELECT } from '@/lib/constants';
+import { PRIORITY_LABELS, PROJECT_STATUS_LABELS, todayISO, normalizeTags } from '@/lib/utils';
+import { FORM_INPUT, FORM_SELECT, PROJECT_TAG_SUGGESTIONS } from '@/lib/constants';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
-import { useApp } from '@/context/AppContext';
 
 interface Props {
   project?: Project | null;
-  defaultAreaId?: string;
   onSave: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onClose: () => void;
 }
@@ -17,25 +15,39 @@ interface Props {
 const PRIORITIES: Priority[] = ['low', 'medium', 'high', 'urgent'];
 const STATUSES: ProjectStatus[] = ['not_started', 'in_progress', 'waiting', 'completed', 'archived'];
 
-export default function ProjectForm({ project, defaultAreaId, onSave, onClose }: Props) {
-  const { state } = useApp();
+export default function ProjectForm({ project, onSave, onClose }: Props) {
   const [name, setName] = useState(project?.name ?? '');
-  const [areaId, setAreaId] = useState(project?.areaId ?? defaultAreaId ?? state.areas[0]?.id ?? '');
   const [description, setDescription] = useState(project?.description ?? '');
+  const [tags, setTags] = useState((project?.tags ?? []).join(', '));
   const [priority, setPriority] = useState<Priority>(project?.priority ?? 'medium');
   const [status, setStatus] = useState<ProjectStatus>(project?.status ?? 'not_started');
   const [deadline, setDeadline] = useState(project?.deadline ?? '');
   const [notes, setNotes] = useState(project?.notes ?? '');
   const [progressPercent, setProgressPercent] = useState(project?.progressPercent ?? 0);
+  const [isPinned, setIsPinned] = useState(project?.isPinned ?? false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !areaId) return;
+    if (!name.trim()) return;
+    const parsedTags = normalizeTags(tags.split(',').map(t => t.trim()).filter(Boolean));
     onSave({
-      areaId, name: name.trim(), description: description.trim(), priority, status,
-      deadline: deadline || null, notes: notes.trim(), progressPercent,
+      areaId: null,
+      name: name.trim(),
+      description: description.trim(),
+      priority,
+      status,
+      deadline: deadline || null,
+      notes: notes.trim(),
+      progressPercent,
+      tags: parsedTags.length ? parsedTags : ['personal'],
+      isPinned,
       linkedGoalIds: project?.linkedGoalIds ?? [],
     });
+  };
+
+  const addTag = (tag: string) => {
+    const current = tags.split(',').map(t => t.trim()).filter(Boolean);
+    if (!current.includes(tag)) setTags([...current, tag].join(', '));
   };
 
   return (
@@ -48,10 +60,21 @@ export default function ProjectForm({ project, defaultAreaId, onSave, onClose }:
               <input type="text" value={name} onChange={e => setName(e.target.value)} className={FORM_INPUT} autoFocus required />
             </div>
             <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Area *</label>
-              <select value={areaId} onChange={e => setAreaId(e.target.value)} className={FORM_SELECT} required>
-                {state.areas.filter(a => !a.isArchived).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Tags</label>
+              <input
+                value={tags}
+                onChange={e => setTags(e.target.value)}
+                placeholder="business, learning, client-work"
+                className={FORM_INPUT}
+              />
+              <div className="flex flex-wrap gap-1 mt-2">
+                {PROJECT_TAG_SUGGESTIONS.map(tag => (
+                  <button key={tag} type="button" onClick={() => addTag(tag)}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-raised text-muted hover:text-indigo-400 hover:bg-indigo-500/10 capitalize">
+                    + {tag.replace(/-/g, ' ')}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Description</label>
@@ -73,15 +96,15 @@ export default function ProjectForm({ project, defaultAreaId, onSave, onClose }:
             </div>
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Deadline</label>
-              <input type="date" value={deadline} min={todayISO()} onChange={e => setDeadline(e.target.value)} className={FORM_INPUT} />
+              <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className={FORM_INPUT} />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Progress % (manual override)</label>
-              <input type="number" min={0} max={100} value={progressPercent} onChange={e => setProgressPercent(Number(e.target.value))} className={FORM_INPUT} />
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} className="rounded border-base" />
+              <span className="text-sm text-secondary">Pin to top of projects list</span>
+            </label>
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Notes</label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${FORM_INPUT} resize-none`} />
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${FORM_INPUT} resize-none`} />
             </div>
           </div>
         </ModalBody>

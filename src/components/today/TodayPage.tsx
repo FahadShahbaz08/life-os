@@ -4,8 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import {
-  Target, Star, CheckCircle2, AlertTriangle, Repeat, Bell, Clock,
-  Wallet, Flag, Play, Download, Upload, Plus, HelpCircle, BellRing,
+  ListTodo, CheckCircle2, Repeat, Bell, Wallet, Flag, Play, Download, Upload, Plus, BellRing,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
@@ -13,22 +12,33 @@ import PageHeader from '@/components/ui/PageHeader';
 import TaskCard from '@/components/tasks/TaskCard';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
 import ProgressBar from '@/components/ui/ProgressBar';
-import { computeTodayDashboard, getGreeting, formatCurrency, goalProgressPercent, todayISO } from '@/lib/utils';
+import { computeTodayDashboard, getGreeting, formatCurrency, goalProgressPercent, todayISO, dayQueueReasonLabel } from '@/lib/utils';
 import { exportData, importData } from '@/lib/storage';
 import { requestNotificationPermission } from '@/lib/notifications';
-import { PriorityBadge } from '@/components/ui/Badge';
 import { BTN_PRIMARY } from '@/lib/constants';
+import { DayQueueItem } from '@/types';
+
+const REASON_STYLE: Record<string, string> = {
+  overdue: 'text-red-400 bg-red-500/10 border-red-500/20',
+  today: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+  focus: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
+  priority: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+  reminder: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
+};
 
 export default function TodayPage() {
-  const { state, updateTask, toggleTopPriority, importState, updateSettings, addTask } = useApp();
+  const { state, updateTask, toggleTopPriority, toggleHabitCompletion, importState, updateSettings, addTask } = useApp();
   const { toast } = useToastContext();
   const dash = computeTodayDashboard(state);
   const name = state.settings.userName;
   const today = format(new Date(), 'EEEE, MMM d');
   const [showTaskForm, setShowTaskForm] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [editingTask, setEditingTask] = useState<string | null>(null);
   const editing = editingTask ? state.tasks.find(t => t.id === editingTask) : null;
+
+  const taskItems = dash.dayQueue.filter(i => i.kind === 'task');
+  const hero = taskItems[0]?.task ?? null;
+  const rest = dash.dayQueue.slice(hero ? 1 : 0);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,30 +56,32 @@ export default function TodayPage() {
     const ok = await requestNotificationPermission();
     if (ok) {
       updateSettings({ notificationsEnabled: true, notifiedReminderIds: [] });
-      toast('Notifications enabled — reminders, overdue tasks, habits');
+      toast('Notifications enabled');
     } else {
       toast('Permission denied — enable in browser settings', 'error');
     }
   };
 
+  const completeTask = (id: string) => {
+    updateTask(id, { status: 'completed' });
+    toast('Done!');
+  };
+
   return (
     <>
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-8 animate-in">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-8 animate-in">
         <PageHeader
           title={`${getGreeting()}${name ? `, ${name}` : ''}`}
-          subtitle={`${today} · What should you focus on right now?`}
+          subtitle={`${today} · Your unified action list`}
           action={
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {!state.settings.notificationsEnabled && (
                 <button onClick={enableNotifications} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                  <BellRing size={13} /> Enable alerts
+                  <BellRing size={13} /> Alerts
                 </button>
               )}
-              <button onClick={() => setShowHelp(!showHelp)} className="p-2 text-muted hover:text-secondary hover:bg-raised rounded-xl" title="How Today works">
-                <HelpCircle size={15} />
-              </button>
-              <button onClick={() => exportData(state)} className="p-2 text-muted hover:text-secondary hover:bg-raised rounded-xl"><Download size={15} /></button>
-              <label className="p-2 text-muted hover:text-secondary hover:bg-raised rounded-xl cursor-pointer">
+              <button onClick={() => exportData(state)} className="p-2 text-muted hover:text-secondary hover:bg-raised rounded-xl" title="Export"><Download size={15} /></button>
+              <label className="p-2 text-muted hover:text-secondary hover:bg-raised rounded-xl cursor-pointer" title="Import">
                 <Upload size={15} /><input type="file" accept=".json" onChange={handleImport} className="hidden" />
               </label>
               <button onClick={() => setShowTaskForm(true)} className={BTN_PRIMARY}>
@@ -82,204 +94,106 @@ export default function TodayPage() {
           }
         />
 
-        {showHelp && (
-          <div className="bg-raised border border-base rounded-xl p-4 mb-6 text-xs text-secondary space-y-2">
-            <p><strong className="text-primary">Focus Now</strong> — first task in your Focus → <strong>Now</strong> column (<Link href="/focus" className="text-indigo-400">add here</Link>)</p>
-            <p><strong className="text-primary">Top 3 Priorities</strong> — check &ldquo;Pin as Top Priority&rdquo; when creating a task, or tap the ★ on any task</p>
-            <p><strong className="text-primary">Today&apos;s Tasks</strong> — set <strong>Due date = today</strong> when adding a task</p>
-            <p><strong className="text-primary">Needs Attention</strong> — overdue tasks, follow-ups (<Link href="/waiting" className="text-indigo-400">Waiting For</Link>), and reminders (<Link href="/reminders" className="text-indigo-400">Reminders</Link>)</p>
-            <p><strong className="text-primary">Priority</strong> — set Low / Medium / High / Urgent in the task form; Urgent + due today surfaces first</p>
-          </div>
-        )}
-
-        {/* Focus Now */}
+        {/* Unified Your Day */}
         <section className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Target size={16} className="text-red-400" />
-              <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">Focus Now</h2>
+              <ListTodo size={16} className="text-indigo-400" />
+              <h2 className="text-sm font-semibold text-primary">Your Day</h2>
+              <span className="text-xs text-muted">({dash.dayQueue.length})</span>
             </div>
-            <Link href="/focus" className="text-xs text-indigo-400">Manage focus queue →</Link>
+            <Link href="/focus" className="text-xs text-indigo-400">Manage focus →</Link>
           </div>
-          {dash.focusNow ? (
-            <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-2xl p-6">
-              <h3 className="text-lg font-bold text-primary mb-2">{dash.focusNow.title}</h3>
-              <div className="flex flex-wrap gap-2 mb-4">
-                <PriorityBadge priority={dash.focusNow.priority} />
-                {dash.focusNow.dueDate && <span className="text-xs text-muted">Due {dash.focusNow.dueDate}</span>}
-              </div>
+
+          {hero ? (
+            <div className="card bg-gradient-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/10 border-accent p-6 mb-4">
+              <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-md border mb-2 ${REASON_STYLE[taskItems[0].reason]}`}>
+                {dayQueueReasonLabel(taskItems[0].reason)}
+              </span>
+              <h3 className="text-lg font-bold text-primary mb-3">{hero.title}</h3>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => updateTask(dash.focusNow!.id, { status: 'completed' })} className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl">Mark Done</button>
+                <button onClick={() => completeTask(hero.id)} className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl">Mark Done</button>
                 <Link href="/focus-session" className="px-4 py-2 text-sm font-medium text-indigo-400 bg-indigo-500/10 rounded-xl">Start Timer</Link>
-                <button onClick={() => updateTask(dash.focusNow!.id, { focusQueue: 'next' })} className="px-4 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Defer</button>
+                <button onClick={() => setEditingTask(hero.id)} className="px-4 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Edit</button>
               </div>
             </div>
           ) : (
-            <div className="bg-surface border border-base rounded-2xl p-6 text-center">
-              <p className="text-sm text-muted mb-3">Add a task to <strong>Focus → Now</strong> to see it here.</p>
-              <Link href="/focus" className="inline-flex items-center gap-2 px-4 py-2 text-sm text-white bg-indigo-600 rounded-xl">
-                <Plus size={14} /> Add to Focus Now
-              </Link>
+            <div className="card p-6 text-center mb-4">
+              <p className="text-sm text-muted mb-3">Nothing queued for today. Add a task or set a due date.</p>
+              <button onClick={() => setShowTaskForm(true)} className="inline-flex items-center gap-2 px-4 py-2 text-sm text-white bg-indigo-600 rounded-xl">
+                <Plus size={14} /> Add task
+              </button>
+            </div>
+          )}
+
+          {rest.length > 0 && (
+            <div className="card p-4 space-y-2">
+              {rest.map(item => (
+                <DayQueueRow key={item.id} item={item}
+                  onComplete={id => completeTask(id)}
+                  onEdit={id => setEditingTask(id)}
+                  onTogglePriority={toggleTopPriority}
+                />
+              ))}
             </div>
           )}
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <section className="bg-surface border border-base rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Star size={15} className="text-amber-400" />
-                <h2 className="text-sm font-semibold text-primary">Top 3 Priorities</h2>
-              </div>
-              <button onClick={() => setShowTaskForm(true)} className="text-xs text-indigo-400">+ Add</button>
-            </div>
-            {dash.topPriorities.length === 0 ? (
-              <p className="text-sm text-muted">Add a task and check &ldquo;Pin as Top Priority&rdquo;, or tap ★ on a task.</p>
-            ) : (
-              <div className="space-y-2">
-                {dash.topPriorities.map((task, i) => (
-                  <div key={task.id} className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-muted w-4">{i + 1}.</span>
-                    <div className="flex-1">
-                      <TaskCard task={task} compact onEdit={() => setEditingTask(task.id)} onDelete={() => {}}
-                        onToggleTopPriority={() => toggleTopPriority(task.id)}
-                        onStatusToggle={() => updateTask(task.id, { status: task.status === 'completed' ? 'todo' : 'completed' })}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="bg-surface border border-base rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
+        {/* Habits — compact row */}
+        {dash.todaysHabits.length > 0 && (
+          <section className="card p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Repeat size={15} className="text-indigo-400" />
-                <h2 className="text-sm font-semibold text-primary">Today&apos;s Habits</h2>
+                <h2 className="text-sm font-semibold text-primary">Habits</h2>
               </div>
-              <Link href="/habits" className="text-xs text-indigo-400">View all</Link>
+              <Link href="/habits" className="text-xs text-indigo-400">All →</Link>
             </div>
-            {dash.todaysHabits.length === 0 ? (
-              <p className="text-sm text-muted">No habits. <Link href="/habits" className="text-indigo-400">Add habits →</Link></p>
-            ) : (
-              <div className="space-y-2">
-                {dash.todaysHabits.map(({ habit, completed }) => (
-                  <Link key={habit.id} href="/habits" className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${completed ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-base'}`}>
-                    <CheckCircle2 size={16} className={completed ? 'text-emerald-500' : 'text-muted'} />
-                    <span className={`text-sm ${completed ? 'line-through text-muted' : 'text-primary'}`}>{habit.name}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <section className="bg-surface border border-base rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-primary">Today&apos;s Tasks ({dash.todaysTasks.length})</h2>
-              <button onClick={() => setShowTaskForm(true)} className="text-xs text-indigo-400">+ Add (due today)</button>
-            </div>
-            {dash.todaysTasks.length === 0 ? (
-              <p className="text-sm text-muted">No tasks due today. Add one with due date = {todayISO()}.</p>
-            ) : (
-              <div className="space-y-2">
-                {dash.todaysTasks.map(task => (
-                  <TaskCard key={task.id} task={task} compact onEdit={() => setEditingTask(task.id)} onDelete={() => {}}
-                    onToggleTopPriority={() => toggleTopPriority(task.id)}
-                    onStatusToggle={() => updateTask(task.id, { status: 'completed' })}
-                  />
-                ))}
-              </div>
-            )}
-            {dash.overdueTasks.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-subtle">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle size={14} className="text-red-400" />
-                  <span className="text-xs font-semibold text-red-400">Overdue ({dash.overdueTasks.length})</span>
-                </div>
-                {dash.overdueTasks.slice(0, 3).map(task => (
-                  <TaskCard key={task.id} task={task} compact onEdit={() => setEditingTask(task.id)} onDelete={() => {}}
-                    onStatusToggle={() => updateTask(task.id, { status: 'completed' })}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="bg-surface border border-base rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <AlertTriangle size={15} className="text-amber-400" />
-              <h2 className="text-sm font-semibold text-primary">Needs Attention</h2>
-            </div>
-            <div className="space-y-3">
-              {dash.overdueTasks.slice(0, 2).map(task => (
-                <div key={task.id} className="flex items-center gap-3 p-3 rounded-xl border border-red-500/20 bg-red-500/5">
-                  <AlertTriangle size={16} className="text-red-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-primary truncate">{task.title}</p>
-                    <p className="text-xs text-muted">Overdue · was due {task.dueDate}</p>
-                  </div>
-                </div>
+            <div className="flex flex-wrap gap-2">
+              {dash.todaysHabits.map(({ habit, completed }) => (
+                <button key={habit.id}
+                  onClick={() => { toggleHabitCompletion(habit.id); toast(completed ? 'Unchecked' : 'Logged!'); }}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm transition-colors ${completed ? 'border-emerald-500/30 bg-emerald-500/5 text-muted line-through' : 'border-base text-primary hover:border-indigo-500/30'}`}>
+                  <CheckCircle2 size={14} className={completed ? 'text-emerald-500' : 'text-muted'} />
+                  {habit.name}
+                </button>
               ))}
-              {dash.waitingFollowUps.map(w => (
-                <Link key={w.id} href="/waiting" className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
-                  <Clock size={16} className="text-amber-400" />
-                  <div>
-                    <p className="text-sm text-primary">{w.title}</p>
-                    <p className="text-xs text-muted">{w.person} · Follow up</p>
-                  </div>
-                </Link>
-              ))}
-              {dash.upcomingReminders.slice(0, 3).map(r => (
-                <Link key={r.id} href="/reminders" className="flex items-center gap-3 p-3 rounded-xl border border-base hover:border-indigo-500/20">
-                  <Bell size={16} className="text-indigo-400" />
-                  <div>
-                    <p className="text-sm text-primary">{r.title}</p>
-                    <p className="text-xs text-muted">{r.remindAt.replace('T', ' ').slice(0, 16)}</p>
-                  </div>
-                </Link>
-              ))}
-              {dash.overdueTasks.length === 0 && dash.waitingFollowUps.length === 0 && dash.upcomingReminders.length === 0 && (
-                <p className="text-sm text-muted">All clear. Add reminders or waiting-for items to track follow-ups.</p>
-              )}
             </div>
           </section>
-        </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section className="bg-surface border border-base rounded-2xl p-5">
+          <section className="card p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Wallet size={15} className="text-emerald-400" />
-                <h2 className="text-sm font-semibold text-primary">Finance Snapshot</h2>
+                <h2 className="text-sm font-semibold text-primary">This Month</h2>
               </div>
-              <Link href="/finance" className="text-xs text-indigo-400">Charts →</Link>
+              <Link href="/finance" className="text-xs text-indigo-400">Finance →</Link>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="p-3 bg-raised rounded-xl">
-                <p className="text-[10px] text-muted uppercase">Receivables</p>
-                <p className="text-sm font-bold text-emerald-400">{formatCurrency(dash.financeAlerts.totalReceivables)}</p>
+              <div className="p-3 bg-overlay rounded-xl">
+                <p className="text-[10px] text-muted uppercase">Income</p>
+                <p className="text-sm font-bold text-emerald-400">{formatCurrency(dash.financeAlerts.monthlyIncome)}</p>
               </div>
-              <div className="p-3 bg-raised rounded-xl">
+              <div className="p-3 bg-overlay rounded-xl">
+                <p className="text-[10px] text-muted uppercase">Expenses</p>
+                <p className="text-sm font-bold text-red-400">{formatCurrency(dash.financeAlerts.monthlyExpenses)}</p>
+              </div>
+              <div className="p-3 bg-overlay rounded-xl">
                 <p className="text-[10px] text-muted uppercase">Payables</p>
-                <p className="text-sm font-bold text-red-400">{formatCurrency(dash.financeAlerts.totalPayables)}</p>
-              </div>
-              <div className="p-3 bg-raised rounded-xl">
-                <p className="text-[10px] text-muted uppercase">This Month</p>
-                <p className="text-sm font-bold text-primary">{formatCurrency(dash.financeAlerts.monthlyExpenses)}</p>
+                <p className="text-sm font-bold text-amber-400">{formatCurrency(dash.financeAlerts.totalPayables)}</p>
               </div>
             </div>
           </section>
 
-          <section className="bg-surface border border-base rounded-2xl p-5">
+          <section className="card p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Flag size={15} className="text-purple-400" />
-                <h2 className="text-sm font-semibold text-primary">Goal Progress</h2>
+                <h2 className="text-sm font-semibold text-primary">Goals</h2>
               </div>
-              <Link href="/goals" className="text-xs text-indigo-400">All goals →</Link>
+              <Link href="/review" className="text-xs text-indigo-400">Performance →</Link>
             </div>
             {dash.goalProgress.length === 0 ? (
               <p className="text-sm text-muted"><Link href="/goals" className="text-indigo-400">Set goals →</Link></p>
@@ -298,16 +212,15 @@ export default function TodayPage() {
             )}
           </section>
         </div>
-    </div>
+      </div>
 
       {showTaskForm && (
         <TaskForm
           defaultDueDate={todayISO()}
-          defaultTopPriority
           onSave={d => {
             addTask(taskFormToEntity(d));
             setShowTaskForm(false);
-            toast('Task added for today');
+            toast('Task added');
           }}
           onClose={() => setShowTaskForm(false)}
         />
@@ -316,5 +229,39 @@ export default function TodayPage() {
         <TaskForm task={editing} onSave={d => { updateTask(editing.id, taskFormToEntity(d)); setEditingTask(null); toast('Updated'); }} onClose={() => setEditingTask(null)} />
       )}
     </>
+  );
+}
+
+function DayQueueRow({ item, onComplete, onEdit, onTogglePriority }: {
+  item: DayQueueItem;
+  onComplete: (id: string) => void;
+  onEdit: (id: string) => void;
+  onTogglePriority: (id: string) => void;
+}) {
+  if (item.kind === 'reminder' && item.reminder) {
+    return (
+      <Link href="/reminders" className="flex items-center gap-3 p-3 rounded-xl border border-base hover:border-indigo-500/20">
+        <Bell size={16} className="text-sky-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-primary truncate">{item.reminder.title}</p>
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${REASON_STYLE.reminder}`}>Reminder</span>
+        </div>
+      </Link>
+    );
+  }
+
+  if (!item.task) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border shrink-0 ${REASON_STYLE[item.reason]}`}>
+        {dayQueueReasonLabel(item.reason)}
+      </span>
+      <div className="flex-1 min-w-0">
+        <TaskCard task={item.task} compact onEdit={() => onEdit(item.task!.id)} onDelete={() => {}}
+          onToggleTopPriority={() => onTogglePriority(item.task!.id)}
+          onStatusToggle={() => onComplete(item.task!.id)}
+        />
+      </div>
+    </div>
   );
 }

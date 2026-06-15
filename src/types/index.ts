@@ -14,6 +14,7 @@ export type WaitingStatus = 'waiting' | 'follow_up_needed' | 'completed';
 export type FinanceReceivableStatus = 'pending' | 'partial' | 'collected' | 'written_off';
 export type FinancePayableStatus = 'pending' | 'partial' | 'paid';
 export type ExpenseCategory = 'food' | 'gym' | 'software' | 'fuel' | 'family' | 'entertainment' | 'business' | 'other';
+export type IncomeSource = 'salary' | 'freelance' | 'business' | 'investment' | 'other';
 export type VisionType = 'one_year' | 'three_year' | 'five_year' | 'bucket_list' | 'dream_project';
 export type FocusSessionType = 'work' | 'short_break' | 'long_break';
 export type Mood = 'great' | 'good' | 'okay' | 'rough';
@@ -32,7 +33,7 @@ export interface Area {
 
 export interface Project {
   id: string;
-  areaId: string;
+  areaId: string | null;
   name: string;
   description: string;
   priority: Priority;
@@ -40,6 +41,8 @@ export interface Project {
   progressPercent: number;
   deadline: string | null;
   notes: string;
+  tags: string[];
+  isPinned: boolean;
   linkedGoalIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -198,6 +201,16 @@ export interface FinanceExpense {
   createdAt: string;
 }
 
+export interface FinanceIncome {
+  id: string;
+  source: IncomeSource;
+  amount: number;
+  currency: string;
+  date: string;
+  description: string;
+  createdAt: string;
+}
+
 export interface VisionItem {
   id: string;
   type: VisionType;
@@ -279,6 +292,7 @@ export interface AppState {
   receivables: FinanceReceivable[];
   payables: FinancePayable[];
   expenses: FinanceExpense[];
+  incomes: FinanceIncome[];
   visionItems: VisionItem[];
   weeklyReviews: WeeklyReview[];
   focusSessions: FocusSession[];
@@ -306,21 +320,34 @@ export interface DashboardStats {
   inProgressProjects: number;
 }
 
+export type DayQueueReason = 'overdue' | 'today' | 'focus' | 'priority' | 'reminder';
+
+export interface DayQueueItem {
+  id: string;
+  kind: 'task' | 'reminder';
+  reason: DayQueueReason;
+  task?: Task;
+  reminder?: Reminder;
+}
+
 export interface TodayDashboard {
-  focusNow: Task | null;
-  topPriorities: Task[];
-  todaysTasks: Task[];
-  overdueTasks: Task[];
+  dayQueue: DayQueueItem[];
   todaysHabits: { habit: Habit; completed: boolean }[];
-  upcomingReminders: Reminder[];
-  waitingFollowUps: WaitingFor[];
   financeAlerts: {
-    totalReceivables: number;
+    monthlyIncome: number;
     totalPayables: number;
     monthlyExpenses: number;
     upcomingPayables: FinancePayable[];
   };
   goalProgress: Goal[];
+}
+
+export interface CompletionEvent {
+  id: string;
+  type: 'task' | 'habit';
+  title: string;
+  timestamp: string;
+  subtitle?: string;
 }
 
 export interface FocusQueueData {

@@ -10,7 +10,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { LineChart } from '@/components/ui/Charts';
-import { FORM_INPUT, BTN_PRIMARY } from '@/lib/constants';
+import { FORM_INPUT, BTN_PRIMARY, DEFAULT_CURRENCY } from '@/lib/constants';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { computeCumulativePnL, computeTradingStats } from '@/lib/chart-data';
 
@@ -177,7 +177,7 @@ function OpenTradeModal({ onClose, onSave }: { onClose: () => void; onSave: (d: 
         onSave({
           pair: pair.trim().toUpperCase(),
           investedAmount: Number(investedAmount),
-          currency: 'USD',
+          currency: DEFAULT_CURRENCY,
           openedAt: new Date(openedAt).toISOString(),
           notes: '',
         });
@@ -189,7 +189,7 @@ function OpenTradeModal({ onClose, onSave }: { onClose: () => void; onSave: (d: 
               <input value={pair} onChange={e => setPair(e.target.value)} placeholder="e.g. BTC/USDT, EUR/USD" className={FORM_INPUT} required autoFocus />
             </div>
             <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Amount Invested ($) *</label>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Amount Invested (PKR) *</label>
               <input type="number" step="0.01" min="0" value={investedAmount} onChange={e => setInvestedAmount(e.target.value)} placeholder="500" className={FORM_INPUT} required />
             </div>
             <div>
@@ -227,7 +227,7 @@ function CloseTradeModal({ trade, onClose, onSave }: { trade: Trade; onClose: ()
           <p className="text-xs text-muted mb-4">Invested {formatCurrency(trade.investedAmount)} · Opened {formatDateTime(trade.openedAt)}</p>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Profit / Loss ($) *</label>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Profit / Loss (PKR) *</label>
               <p className="text-[10px] text-muted mb-1">Use negative for loss (e.g. -25.50)</p>
               <input type="number" step="0.01" value={profitLoss} onChange={e => setProfitLoss(e.target.value)} placeholder="50 or -30" className={FORM_INPUT} required autoFocus />
             </div>

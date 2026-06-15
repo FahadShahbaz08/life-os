@@ -1,11 +1,13 @@
 import {
   format, isToday, isPast, isThisWeek, parseISO, startOfWeek, endOfWeek,
-  startOfMonth, isWithinInterval,
+  startOfMonth, endOfMonth, isWithinInterval,
 } from 'date-fns';
 import {
   Priority, ProjectStatus, TaskStatus, Project, Task, DashboardStats,
   AppState, TodayDashboard, FocusQueueData, SearchResult, Goal, Habit,
+  DayQueueItem, DayQueueReason, Reminder,
 } from '@/types';
+import { DEFAULT_CURRENCY } from './constants';
 
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -184,19 +186,69 @@ export function suggestFocusNow(tasks: Task[]): Task | null {
   return sortTasksByPriority(active)[0] ?? null;
 }
 
-export function computeTodayDashboard(state: AppState): TodayDashboard {
+export function getWeekBounds(date = new Date()): { start: string; end: string } {
+  const start = startOfWeek(date, { weekStartsOn: 1 });
+  const end = endOfWeek(date, { weekStartsOn: 1 });
+  return {
+    start: format(start, 'yyyy-MM-dd'),
+    end: format(end, 'yyyy-MM-dd'),
+  };
+}
+
+export function getMonthBounds(date = new Date()): { start: string; end: string; key: string; label: string } {
+  const start = startOfMonth(date);
+  const end = endOfMonth(date);
+  return {
+    start: format(start, 'yyyy-MM-dd'),
+    end: format(end, 'yyyy-MM-dd'),
+    key: format(start, 'yyyy-MM'),
+    label: format(start, 'MMMM yyyy'),
+  };
+}
+
+const DAY_QUEUE_LABELS: Record<DayQueueReason, string> = {
+  overdue: 'Overdue',
+  today: 'Due today',
+  focus: 'Focus now',
+  priority: 'Priority',
+  reminder: 'Reminder',
+};
+
+export function dayQueueReasonLabel(reason: DayQueueReason): string {
+  return DAY_QUEUE_LABELS[reason];
+}
+
+export function computeDayQueue(state: AppState): DayQueueItem[] {
   const active = state.tasks.filter(isActiveTask);
   const now = todayISO();
-  const focusNow = suggestFocusNow(state.tasks);
+  const seen = new Set<string>();
+  const items: DayQueueItem[] = [];
 
-  const pinned = state.settings.topPriorityTaskIds
-    .map(id => active.find(t => t.id === id))
-    .filter((t): t is Task => !!t)
-    .slice(0, 3);
+  const addTask = (task: Task, reason: DayQueueReason) => {
+    if (seen.has(task.id)) return;
+    seen.add(task.id);
+    items.push({ id: `task-${task.id}`, kind: 'task', reason, task });
+  };
 
-  const topPriorities = pinned.length > 0
-    ? pinned
-    : sortTasksByPriority(active.filter(t => t.isTopPriority || t.dueDate === now)).slice(0, 3);
+  sortTasksByPriority(active.filter(t => isOverdue(t.dueDate))).forEach(t => addTask(t, 'overdue'));
+  sortTasksByPriority(active.filter(t => t.focusQueue === 'now')).forEach(t => addTask(t, 'focus'));
+  sortTasksByPriority(active.filter(t => t.dueDate === now)).forEach(t => addTask(t, 'today'));
+  sortTasksByPriority(active.filter(t => t.isTopPriority)).forEach(t => addTask(t, 'priority'));
+
+  state.reminders
+    .filter(r => r.status === 'pending' && r.remindAt.slice(0, 10) <= now)
+    .sort((a, b) => a.remindAt.localeCompare(b.remindAt))
+    .slice(0, 5)
+    .forEach(r => {
+      items.push({ id: `reminder-${r.id}`, kind: 'reminder', reason: 'reminder', reminder: r });
+    });
+
+  return items;
+}
+
+export function computeTodayDashboard(state: AppState): TodayDashboard {
+  const now = todayISO();
+  const monthKey = now.slice(0, 7);
 
   const todaysHabits = state.habits
     .filter(h => h.isActive && (h.frequency === 'daily' || h.frequency === 'weekly'))
@@ -207,32 +259,13 @@ export function computeTodayDashboard(state: AppState): TodayDashboard {
       ),
     }));
 
-  const upcomingReminders = state.reminders
-    .filter(r => r.status === 'pending' && r.remindAt >= nowISO())
-    .sort((a, b) => a.remindAt.localeCompare(b.remindAt))
-    .slice(0, 5);
-
-  const waitingFollowUps = state.waitingFor
-    .filter(w => w.status !== 'completed' && (
-      w.status === 'follow_up_needed' ||
-      (w.followUpDate && w.followUpDate <= now)
-    ))
-    .slice(0, 5);
-
-  const monthStart = startOfMonth(new Date());
-  const monthEnd = new Date();
   const monthlyExpenses = state.expenses
-    .filter(e => {
-      try {
-        const d = parseISO(e.date);
-        return isWithinInterval(d, { start: monthStart, end: monthEnd });
-      } catch { return false; }
-    })
+    .filter(e => e.date.startsWith(monthKey))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const totalReceivables = state.receivables
-    .filter(r => r.status === 'pending' || r.status === 'partial')
-    .reduce((sum, r) => sum + r.amount, 0);
+  const monthlyIncome = (state.incomes ?? [])
+    .filter(i => i.date.startsWith(monthKey))
+    .reduce((sum, i) => sum + i.amount, 0);
 
   const totalPayables = state.payables
     .filter(p => p.status === 'pending' || p.status === 'partial')
@@ -243,18 +276,11 @@ export function computeTodayDashboard(state: AppState): TodayDashboard {
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
     .slice(0, 3);
 
-  const goalProgress = state.goals.filter(g => g.status === 'active').slice(0, 4);
-
   return {
-    focusNow,
-    topPriorities,
-    todaysTasks: sortTasksByPriority(active.filter(t => t.dueDate === now)),
-    overdueTasks: sortTasksByPriority(active.filter(t => isOverdue(t.dueDate))),
+    dayQueue: computeDayQueue(state),
     todaysHabits,
-    upcomingReminders,
-    waitingFollowUps,
-    financeAlerts: { totalReceivables, totalPayables, monthlyExpenses, upcomingPayables },
-    goalProgress,
+    financeAlerts: { monthlyIncome, totalPayables, monthlyExpenses, upcomingPayables },
+    goalProgress: state.goals.filter(g => g.status === 'active').slice(0, 4),
   };
 }
 
@@ -291,15 +317,6 @@ export function goalProgressPercent(goal: Goal): number {
     return Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100));
   }
   return goal.status === 'completed' ? 100 : 0;
-}
-
-export function getWeekBounds(date = new Date()): { start: string; end: string } {
-  const start = startOfWeek(date, { weekStartsOn: 1 });
-  const end = endOfWeek(date, { weekStartsOn: 1 });
-  return {
-    start: format(start, 'yyyy-MM-dd'),
-    end: format(end, 'yyyy-MM-dd'),
-  };
 }
 
 export function globalSearch(state: AppState, query: string): SearchResult[] {
@@ -352,6 +369,12 @@ export function getGreeting(): string {
   return 'Good evening';
 }
 
-export function formatCurrency(amount: number, currency = 'USD'): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+const CURRENCY_LOCALE: Record<string, string> = {
+  PKR: 'en-PK',
+  USD: 'en-US',
+};
+
+export function formatCurrency(amount: number, currency = DEFAULT_CURRENCY): string {
+  const locale = CURRENCY_LOCALE[currency] ?? 'en-PK';
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount);
 }

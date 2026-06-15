@@ -1,6 +1,6 @@
 import {
   AppState, ActivityEntry, LegacyAppState, LegacyProject, Task, Project,
-  Note, FocusSession, PomodoroStats, AppSettings,
+  Note, FocusSession, PomodoroStats, AppSettings, Area,
 } from '@/types';
 import { generateId } from './utils';
 import { createDefaultAreas, STORAGE_KEY, LEGACY_STORAGE_KEY } from './constants';
@@ -27,6 +27,7 @@ export function createEmptyState(): AppState {
     receivables: [],
     payables: [],
     expenses: [],
+    incomes: [],
     visionItems: [],
     weeklyReviews: [],
     focusSessions: [],
@@ -52,8 +53,8 @@ function mapLegacyProjectStatus(status: string): Project['status'] {
 
 function migrateFromLegacy(raw: LegacyAppState): AppState {
   const state = createEmptyState();
-  const careerArea = state.areas.find(a => a.slug === 'career') ?? state.areas[0];
-  const learningArea = state.areas.find(a => a.slug === 'learning') ?? state.areas[0];
+  const careerArea = state.areas.find(a => a.slug === 'work' || a.slug === 'career') ?? state.areas[0];
+  const learningArea = state.areas.find(a => a.slug === 'growth' || a.slug === 'learning') ?? state.areas[0];
 
   const projects: Project[] = (raw.projects ?? []).map((p: LegacyProject) => ({
     id: p.id,
@@ -68,6 +69,8 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
     deadline: p.deadline,
     notes: p.notes,
     linkedGoalIds: [],
+    tags: ['career'],
+    isPinned: false,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   }));
@@ -148,11 +151,30 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
   };
 }
 
-function normalizeState(parsed: Partial<AppState>): AppState {
+function normalizeProjects(projects: Project[] | undefined, areas: Area[]): Project[] {
+  return (projects ?? []).map(p => {
+    const raw = p as Project & { tags?: string[]; isPinned?: boolean };
+    let tags = raw.tags?.length ? [...raw.tags] : [];
+    if (tags.length === 0 && raw.areaId) {
+      const area = areas.find(a => a.id === raw.areaId);
+      if (area) tags.push(area.slug);
+    }
+    if (tags.length === 0) tags = ['personal'];
+    return {
+      ...raw,
+      areaId: raw.areaId ?? null,
+      tags,
+      isPinned: raw.isPinned ?? false,
+    };
+  });
+}
+
+export function normalizeState(parsed: Partial<AppState>): AppState {
   const empty = createEmptyState();
+  const areas = parsed.areas?.length ? parsed.areas : empty.areas;
   return {
-    areas: parsed.areas?.length ? parsed.areas : empty.areas,
-    projects: parsed.projects ?? [],
+    areas,
+    projects: normalizeProjects(parsed.projects, areas),
     tasks: parsed.tasks ?? [],
     inboxItems: parsed.inboxItems ?? [],
     goals: parsed.goals ?? [],
@@ -164,6 +186,7 @@ function normalizeState(parsed: Partial<AppState>): AppState {
     receivables: parsed.receivables ?? [],
     payables: parsed.payables ?? [],
     expenses: parsed.expenses ?? [],
+    incomes: parsed.incomes ?? [],
     visionItems: parsed.visionItems ?? [],
     weeklyReviews: parsed.weeklyReviews ?? [],
     focusSessions: parsed.focusSessions ?? [],

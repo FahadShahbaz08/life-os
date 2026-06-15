@@ -55,7 +55,7 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
   const [isRecurring, setIsRecurring] = useState(task?.isRecurring ?? false);
   const [isTopPriority, setIsTopPriority] = useState(task?.isTopPriority ?? defaultTopPriority ?? false);
 
-  const areaProjects = state.projects.filter(p => !areaId || p.areaId === areaId);
+  const activeProjects = state.projects.filter(p => p.status !== 'archived');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,21 +104,12 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1.5">Area</label>
-                <select value={areaId} onChange={e => { setAreaId(e.target.value); setProjectId(''); }} className={FORM_SELECT}>
-                  <option value="">None</option>
-                  {state.areas.filter(a => !a.isArchived).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1.5">Project</label>
-                <select value={projectId} onChange={e => setProjectId(e.target.value)} className={FORM_SELECT}>
-                  <option value="">None</option>
-                  {areaProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Project</label>
+              <select value={projectId} onChange={e => setProjectId(e.target.value)} className={FORM_SELECT}>
+                <option value="">None</option>
+                {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

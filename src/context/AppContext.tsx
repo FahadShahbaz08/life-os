@@ -1,10 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   AppState, FilterState, Area, Project, Task, InboxItem, Goal, Habit,
   HabitCompletion, Note, Reminder, WaitingFor, FinanceReceivable, FinancePayable,
-  FinanceExpense, VisionItem, WeeklyReview, FocusSession, AppSettings, Trade,
+  FinanceExpense, VisionItem, WeeklyReview, FocusSession, AppSettings, Trade, FinanceIncome,
 } from '@/types';
 import { loadState, saveState, createActivity, createEmptyState } from '@/lib/storage';
 import { generateId, nowISO } from '@/lib/utils';
@@ -50,6 +51,8 @@ type Action =
   | { type: 'DELETE_PAYABLE'; id: string }
   | { type: 'ADD_EXPENSE'; payload: FinanceExpense }
   | { type: 'DELETE_EXPENSE'; id: string }
+  | { type: 'ADD_INCOME'; payload: import('@/types').FinanceIncome }
+  | { type: 'DELETE_INCOME'; id: string }
   | { type: 'ADD_VISION'; payload: VisionItem }
   | { type: 'UPDATE_VISION'; id: string; data: Partial<VisionItem> }
   | { type: 'DELETE_VISION'; id: string }
@@ -62,7 +65,7 @@ type Action =
   | { type: 'TOGGLE_HABIT_COMPLETION'; habitId: string; date: string };
 
 function pushActivity(state: AppState, entry: ReturnType<typeof createActivity>): AppState {
-  return { ...state, activity: [entry, ...state.activity].slice(0, 100) };
+  return { ...state, activity: [entry, ...state.activity].slice(0, 2000) };
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -185,6 +188,11 @@ function reducer(state: AppState, action: Action): AppState {
     case 'DELETE_EXPENSE':
       return { ...state, expenses: state.expenses.filter(e => e.id !== action.id) };
 
+    case 'ADD_INCOME':
+      return { ...state, incomes: [action.payload, ...state.incomes] };
+    case 'DELETE_INCOME':
+      return { ...state, incomes: state.incomes.filter(i => i.id !== action.id) };
+
     case 'ADD_VISION':
       return { ...state, visionItems: [...state.visionItems, action.payload] };
     case 'UPDATE_VISION':
@@ -208,18 +216,20 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, trades: state.trades.filter(t => t.id !== action.id) };
 
     case 'TOGGLE_HABIT_COMPLETION': {
+      const habit = state.habits.find(h => h.id === action.habitId);
       const existing = state.habitCompletions.find(
         c => c.habitId === action.habitId && c.completedAt.startsWith(action.date)
       );
       if (existing) {
         return { ...state, habitCompletions: state.habitCompletions.filter(c => c.id !== existing.id) };
       }
-      return {
+      const completedAt = action.date.includes('T') ? action.date : new Date().toISOString();
+      return pushActivity({
         ...state,
         habitCompletions: [...state.habitCompletions, {
-          id: generateId(), habitId: action.habitId, completedAt: action.date, value: 1, notes: '',
+          id: generateId(), habitId: action.habitId, completedAt, value: 1, notes: '',
         }],
-      };
+      }, createActivity('habit_completed', `Habit "${habit?.name ?? 'Habit'}" logged`, 'habit', action.habitId));
     }
 
     default:
@@ -278,6 +288,8 @@ export interface AppContextValue {
   deletePayable: (id: string) => void;
   addExpense: (data: Omit<FinanceExpense, 'id' | 'createdAt'>) => void;
   deleteExpense: (id: string) => void;
+  addIncome: (data: Omit<FinanceIncome, 'id' | 'createdAt'>) => void;
+  deleteIncome: (id: string) => void;
   addVisionItem: (data: Omit<VisionItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateVisionItem: (id: string, data: Partial<VisionItem>) => void;
   deleteVisionItem: (id: string) => void;
@@ -289,6 +301,7 @@ export interface AppContextValue {
   deleteTrade: (id: string) => void;
   setTopPriorities: (taskIds: string[]) => void;
   toggleTopPriority: (taskId: string) => void;
+  syncStatus: 'idle' | 'saving' | 'saved' | 'error';
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -301,18 +314,69 @@ function makeEntity<T extends { id: string; createdAt: string; updatedAt: string
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const { status } = useSession();
   const [state, dispatch] = useReducer(reducer, createEmptyState());
   const [filters, setFiltersState] = React.useState<FilterState>(DEFAULT_FILTERS);
   const [hydrated, setHydrated] = React.useState(false);
+  const [syncStatus, setSyncStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const skipNextSave = useRef(true);
 
+  // Load data from cloud when authenticated
   useEffect(() => {
-    dispatch({ type: 'HYDRATE', payload: loadState() });
-    setHydrated(true);
-  }, []);
+    if (status === 'loading') return;
 
+    if (status === 'unauthenticated') {
+      setHydrated(true);
+      return;
+    }
+
+    let cancelled = false;
+    fetch('/api/sync')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to load');
+        return res.json() as Promise<AppState>;
+      })
+      .then(data => {
+        if (!cancelled) {
+          dispatch({ type: 'HYDRATE', payload: data });
+          skipNextSave.current = true;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) dispatch({ type: 'HYDRATE', payload: loadState() });
+      })
+      .finally(() => {
+        if (!cancelled) setHydrated(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [status]);
+
+  // Auto-save to cloud (debounced)
   useEffect(() => {
-    if (hydrated) saveState(state);
-  }, [state, hydrated]);
+    if (!hydrated || status !== 'authenticated') return;
+
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+
+    setSyncStatus('saving');
+    const timer = setTimeout(() => {
+      fetch('/api/sync', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      })
+        .then(res => {
+          if (!res.ok) throw new Error('save failed');
+          setSyncStatus('saved');
+        })
+        .catch(() => setSyncStatus('error'));
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [state, hydrated, status]);
 
   const setFilters = useCallback((f: Partial<FilterState>) => setFiltersState(prev => ({ ...prev, ...f })), []);
   const resetFilters = useCallback(() => setFiltersState(DEFAULT_FILTERS), []);
@@ -408,6 +472,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'ADD_EXPENSE', payload: { ...data, id: generateId(), createdAt: nowISO() } });
   }, []);
   const deleteExpense = useCallback((id: string) => dispatch({ type: 'DELETE_EXPENSE', id }), []);
+  const addIncome = useCallback((data: Omit<FinanceIncome, 'id' | 'createdAt'>) => {
+    dispatch({ type: 'ADD_INCOME', payload: { ...data, id: generateId(), createdAt: nowISO() } });
+  }, []);
+  const deleteIncome = useCallback((id: string) => dispatch({ type: 'DELETE_INCOME', id }), []);
 
   const addVisionItem = useCallback((data: Omit<VisionItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     dispatch({ type: 'ADD_VISION', payload: makeEntity<VisionItem>(data) });
@@ -446,7 +514,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      state, filters, hydrated, setFilters, resetFilters, importState, updateSettings,
+      state, filters, hydrated, syncStatus, setFilters, resetFilters, importState, updateSettings,
       addArea, updateArea, deleteArea,
       addProject, updateProject, deleteProject,
       addTask, updateTask, deleteTask,
@@ -458,7 +526,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addWaitingFor, updateWaitingFor, deleteWaitingFor,
       addReceivable, updateReceivable, deleteReceivable,
       addPayable, updatePayable, deletePayable,
-      addExpense, deleteExpense,
+      addExpense, deleteExpense, addIncome, deleteIncome,
       addVisionItem, updateVisionItem, deleteVisionItem,
       addWeeklyReview, updateWeeklyReview,
       addFocusSession, addTrade, updateTrade, deleteTrade,

@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { signOut, useSession } from 'next-auth/react';
 import {
-  Sun, Moon, ChevronLeft, Brain, Focus, LayoutGrid, Flag, Repeat, FileText, Bell, Clock, Wallet,
-  CalendarCheck, Telescope, Timer, Search, Plus, ListTodo, TrendingUp,
+  Sun, Moon, ChevronLeft, Brain, Focus, LayoutGrid, Flag, Repeat, FileText, Bell, Wallet,
+  CalendarCheck, Telescope, Timer, Search, Plus, ListTodo, TrendingUp, FolderKanban, LogOut,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useApp } from '@/context/AppContext';
-import { getAreaIcon } from '@/lib/area-icons';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
 import { useToastContext } from '@/context/ToastContext';
 
@@ -17,14 +17,14 @@ const MAIN_NAV = [
   { href: '/', label: 'Today', icon: LayoutGrid },
   { href: '/focus', label: 'Focus', icon: Focus },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
+  { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/trading', label: 'Trading', icon: TrendingUp },
   { href: '/goals', label: 'Goals', icon: Flag },
   { href: '/habits', label: 'Habits', icon: Repeat },
   { href: '/notes', label: 'Notes', icon: FileText },
   { href: '/reminders', label: 'Reminders', icon: Bell },
-  { href: '/waiting', label: 'Waiting For', icon: Clock },
   { href: '/finance', label: 'Finance', icon: Wallet },
-  { href: '/review', label: 'Weekly Review', icon: CalendarCheck },
+  { href: '/review', label: 'Performance', icon: CalendarCheck },
   { href: '/vision', label: 'Life Vision', icon: Telescope },
   { href: '/focus-session', label: 'Focus Session', icon: Timer },
   { href: '/search', label: 'Search', icon: Search },
@@ -32,18 +32,18 @@ const MAIN_NAV = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const { theme, toggleTheme } = useTheme();
-  const { state, addTask } = useApp();
+  const { state, addTask, syncStatus } = useApp();
   const { toast } = useToastContext();
   const [collapsed, setCollapsed] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
 
-  const areas = state.areas.filter(a => !a.isArchived).sort((a, b) => a.sortOrder - b.sortOrder);
   const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href);
 
   return (
     <>
-      <aside className={`hidden md:flex flex-col h-full min-h-0 bg-surface border-r border-base transition-all duration-300 shrink-0 ${collapsed ? 'w-14' : 'w-60'}`}>
+      <aside className={`hidden md:flex flex-col h-full min-h-0 bg-surface border-r border-base dark:shadow-[4px_0_24px_-8px_rgba(0,0,0,0.5)] transition-all duration-300 shrink-0 ${collapsed ? 'w-14' : 'w-60'}`}>
         <div className="flex items-center justify-between px-3 py-3.5 border-b border-base">
           {collapsed ? (
             <button onClick={() => setCollapsed(false)} className="mx-auto">
@@ -70,36 +70,34 @@ export default function Sidebar() {
           {MAIN_NAV.map(({ href, label, icon: Icon }) => (
             <Link key={href} href={href} title={collapsed ? label : undefined}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm font-medium transition-colors mb-0.5 ${
-                isActive(href) ? 'bg-indigo-500/10 text-indigo-400' : 'text-secondary hover:bg-raised hover:text-primary'
+                isActive(href) ? 'bg-accent-subtle text-accent border border-accent' : 'text-secondary hover:bg-raised hover:text-primary border border-transparent'
               }`}>
               <Icon size={16} className="shrink-0" />
               {!collapsed && label}
             </Link>
           ))}
 
-          {!collapsed && (
-            <div className="mt-4">
-              <div className="px-2.5 mb-1.5"><span className="text-[10px] font-semibold text-muted uppercase tracking-widest">Areas</span></div>
-              {areas.map(area => {
-                const Icon = getAreaIcon(area.icon);
-                return (
-                  <Link key={area.id} href={`/areas/${area.id}`}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm mb-0.5 ${
-                      pathname === `/areas/${area.id}` ? 'bg-indigo-500/10 text-indigo-400' : 'text-secondary hover:bg-raised'
-                    }`}>
-                    <Icon size={14} style={{ color: area.color }} className="shrink-0" />
-                    <span className="truncate">{area.name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
         </div>
 
-        <div className="px-2 py-2 border-t border-base">
+        <div className="px-2 py-2 border-t border-base space-y-1">
+          {!collapsed && session?.user?.email && (
+            <div className="px-2.5 py-2 text-[10px] text-muted truncate">
+              {session.user.email}
+              {syncStatus === 'saving' && <span className="text-amber-400 ml-1">· saving</span>}
+              {syncStatus === 'saved' && <span className="text-emerald-400 ml-1">· saved</span>}
+              {syncStatus === 'error' && <span className="text-red-400 ml-1">· sync error</span>}
+            </div>
+          )}
           <button onClick={toggleTheme} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-secondary hover:bg-raised">
             {theme === 'dark' ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
             {!collapsed && (theme === 'dark' ? 'Light mode' : 'Dark mode')}
+          </button>
+          <button
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-secondary hover:bg-raised hover:text-red-400"
+          >
+            <LogOut size={15} />
+            {!collapsed && 'Sign out'}
           </button>
         </div>
       </aside>
@@ -113,7 +111,7 @@ export default function Sidebar() {
             { href: '/trading', icon: TrendingUp, label: 'Trading' },
             { href: '/habits', icon: Repeat, label: 'Habits' },
           ].map(({ href, icon: Icon, label }) => (
-            <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 px-2 py-1.5 ${isActive(href) ? 'text-indigo-400' : 'text-muted'}`}>
+            <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 px-2 py-1.5 ${isActive(href) ? 'text-accent' : 'text-muted'}`}>
               <Icon size={18} /><span className="text-[9px] font-medium">{label}</span>
             </Link>
           ))}

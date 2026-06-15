@@ -56,3 +56,28 @@ export function computeExpensesByCategory(expenses: { category: string; amount: 
     .map(([label, value]) => ({ label: label.replace('_', ' '), value }))
     .sort((a, b) => b.value - a.value);
 }
+
+export function computeMonthlyCashflow(
+  incomes: { date: string; amount: number }[],
+  expenses: { date: string; amount: number }[],
+): { label: string; income: number; expenses: number; net: number }[] {
+  const byMonth: Record<string, { income: number; expenses: number }> = {};
+  incomes.forEach(i => {
+    const key = i.date.slice(0, 7);
+    if (!byMonth[key]) byMonth[key] = { income: 0, expenses: 0 };
+    byMonth[key].income += i.amount;
+  });
+  expenses.forEach(e => {
+    const key = e.date.slice(0, 7);
+    if (!byMonth[key]) byMonth[key] = { income: 0, expenses: 0 };
+    byMonth[key].expenses += e.amount;
+  });
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return Object.entries(byMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, v]) => {
+      const [y, m] = key.split('-');
+      return { label: `${months[Number(m) - 1]} ${y.slice(2)}`, income: v.income, expenses: v.expenses, net: v.income - v.expenses };
+    });
+}

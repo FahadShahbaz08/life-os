@@ -8,7 +8,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import { globalSearch } from '@/lib/utils';
 
 const TYPE_PATHS: Record<string, string> = {
-  task: '/tasks', note: '/notes', project: '/projects', goal: '/goals', habit: '/habits', area: '/areas',
+  task: '/tasks', note: '/notes', project: '/projects', goal: '/goals', habit: '/habits', area: '/projects',
 };
 
 export default function SearchPage() {
@@ -42,7 +42,7 @@ export default function SearchPage() {
                 <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">{type}s ({items.length})</h2>
                 <div className="space-y-1">
                   {items.map(r => (
-                    <Link key={r.id} href={type === 'project' ? `/projects/${r.id}` : type === 'area' ? `/areas/${r.id}` : TYPE_PATHS[type] ?? '/'}
+                    <Link key={r.id} href={type === 'project' ? `/projects/${r.id}` : TYPE_PATHS[type] ?? '/'}
                       className="block px-4 py-3 bg-surface border border-base rounded-xl hover:border-indigo-500/30 transition-colors">
                       <p className="text-sm font-medium text-primary">{r.title}</p>
                       <p className="text-xs text-muted">{r.subtitle}</p>

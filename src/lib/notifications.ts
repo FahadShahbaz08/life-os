@@ -57,14 +57,6 @@ export function collectDueNotifications(state: AppState, alreadyNotified: string
       }
     });
 
-  state.waitingFor
-    .filter(w => w.status !== 'completed' && w.followUpDate && w.followUpDate <= today)
-    .forEach(w => {
-      if (!alreadyNotified.includes(`waiting-${w.id}`)) {
-        items.push({ id: `waiting-${w.id}`, title: 'Follow up needed', body: `${w.title} — ${w.person}` });
-      }
-    });
-
   state.habits
     .filter(h => h.isActive && h.frequency === 'daily')
     .forEach(h => {
