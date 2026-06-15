@@ -8,6 +8,7 @@ import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
 
 interface Props {
   project?: Project | null;
+  defaultAreaId?: string | null;
   onSave: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onClose: () => void;
 }
@@ -15,7 +16,7 @@ interface Props {
 const PRIORITIES: Priority[] = ['low', 'medium', 'high', 'urgent'];
 const STATUSES: ProjectStatus[] = ['not_started', 'in_progress', 'waiting', 'completed', 'archived'];
 
-export default function ProjectForm({ project, onSave, onClose }: Props) {
+export default function ProjectForm({ project, defaultAreaId = null, onSave, onClose }: Props) {
   const [name, setName] = useState(project?.name ?? '');
   const [description, setDescription] = useState(project?.description ?? '');
   const [tags, setTags] = useState((project?.tags ?? []).join(', '));
@@ -31,7 +32,7 @@ export default function ProjectForm({ project, onSave, onClose }: Props) {
     if (!name.trim()) return;
     const parsedTags = normalizeTags(tags.split(',').map(t => t.trim()).filter(Boolean));
     onSave({
-      areaId: null,
+      areaId: project?.areaId ?? defaultAreaId ?? null,
       name: name.trim(),
       description: description.trim(),
       priority,
