@@ -10,6 +10,7 @@ export interface UserDoc {
   passwordHash: string;
   name: string;
   data: AppState;
+  googleRefreshToken?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,5 +76,28 @@ export async function saveUserData(userId: string, data: AppState): Promise<void
   await col.updateOne(
     { _id: new ObjectId(userId) },
     { $set: { data, updatedAt: new Date() } }
+  );
+}
+
+export async function getGoogleRefreshToken(userId: string): Promise<string | null> {
+  const user = await findUserById(userId);
+  return user?.googleRefreshToken ?? null;
+}
+
+export async function saveGoogleRefreshToken(userId: string, refreshToken: string): Promise<void> {
+  if (!ObjectId.isValid(userId)) throw new Error('Invalid user id');
+  const col = await getUsersCollection();
+  await col.updateOne(
+    { _id: new ObjectId(userId) },
+    { $set: { googleRefreshToken: refreshToken, updatedAt: new Date() } }
+  );
+}
+
+export async function clearGoogleRefreshToken(userId: string): Promise<void> {
+  if (!ObjectId.isValid(userId)) throw new Error('Invalid user id');
+  const col = await getUsersCollection();
+  await col.updateOne(
+    { _id: new ObjectId(userId) },
+    { $set: { googleRefreshToken: null, updatedAt: new Date() } }
   );
 }

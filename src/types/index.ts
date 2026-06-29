@@ -65,6 +65,7 @@ export interface Task {
   tags: string[];
   progressNotes: string;
   isTopPriority: boolean;
+  googleEventId: string | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -276,6 +277,7 @@ export interface AppSettings {
   userName: string;
   notificationsEnabled: boolean;
   notifiedReminderIds: string[];
+  googleCalendarSyncEnabled: boolean;
 }
 
 export interface AppState {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import {
-  ListTodo, CheckCircle2, Repeat, Bell, Wallet, Flag, Play, Download, Upload, Plus, BellRing,
+  ListTodo, CheckCircle2, Repeat, Bell, Wallet, Flag, Play, Download, Upload, Plus, BellRing, Eye, EyeOff,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
@@ -34,6 +34,8 @@ export default function TodayPage() {
   const today = format(new Date(), 'EEEE, MMM d');
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [editingTask, setEditingTask] = useState<string | null>(null);
+  const [showFinanceAmounts, setShowFinanceAmounts] = useState(false);
+  const [showGoalProgress, setShowGoalProgress] = useState(false);
   const editing = editingTask ? state.tasks.find(t => t.id === editingTask) : null;
 
   const taskItems = dash.dayQueue.filter(i => i.kind === 'task');
@@ -168,22 +170,49 @@ export default function TodayPage() {
               <div className="flex items-center gap-2">
                 <Wallet size={15} className="text-emerald-400" />
                 <h2 className="text-sm font-semibold text-primary">This Month</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowFinanceAmounts(v => !v)}
+                  className="p-1 text-muted hover:text-secondary rounded-lg transition-colors"
+                  title={showFinanceAmounts ? 'Hide amounts' : 'Show amounts'}
+                  aria-label={showFinanceAmounts ? 'Hide amounts' : 'Show amounts'}
+                >
+                  {showFinanceAmounts ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
               </div>
               <Link href="/finance" className="text-xs text-indigo-400">Finance →</Link>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="p-3 bg-overlay rounded-xl">
+              <button
+                type="button"
+                onClick={() => setShowFinanceAmounts(v => !v)}
+                className="p-3 bg-overlay rounded-xl text-left hover:bg-raised transition-colors"
+              >
                 <p className="text-[10px] text-muted uppercase">Income</p>
-                <p className="text-sm font-bold text-emerald-400">{formatCurrency(dash.financeAlerts.monthlyIncome)}</p>
-              </div>
-              <div className="p-3 bg-overlay rounded-xl">
+                <p className="text-sm font-bold text-emerald-400">
+                  {showFinanceAmounts ? formatCurrency(dash.financeAlerts.monthlyIncome) : '***'}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFinanceAmounts(v => !v)}
+                className="p-3 bg-overlay rounded-xl text-left hover:bg-raised transition-colors"
+              >
                 <p className="text-[10px] text-muted uppercase">Expenses</p>
-                <p className="text-sm font-bold text-red-400">{formatCurrency(dash.financeAlerts.monthlyExpenses)}</p>
-              </div>
-              <div className="p-3 bg-overlay rounded-xl">
+                <p className="text-sm font-bold text-red-400">
+                  {showFinanceAmounts ? formatCurrency(dash.financeAlerts.monthlyExpenses) : '***'}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFinanceAmounts(v => !v)}
+                className="p-3 bg-overlay rounded-xl text-left hover:bg-raised transition-colors"
+              >
                 <p className="text-[10px] text-muted uppercase">Payables</p>
-                <p className="text-sm font-bold text-amber-400">{formatCurrency(dash.financeAlerts.totalPayables)}</p>
-              </div>
+                <p className="text-sm font-bold text-amber-400">
+                  {showFinanceAmounts ? formatCurrency(dash.financeAlerts.totalPayables) : '***'}
+                </p>
+              </button>
             </div>
           </section>
 
@@ -192,6 +221,17 @@ export default function TodayPage() {
               <div className="flex items-center gap-2">
                 <Flag size={15} className="text-purple-400" />
                 <h2 className="text-sm font-semibold text-primary">Goals</h2>
+                {dash.goalProgress.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowGoalProgress(v => !v)}
+                    className="p-1 text-muted hover:text-secondary rounded-lg transition-colors"
+                    title={showGoalProgress ? 'Hide progress' : 'Show progress'}
+                    aria-label={showGoalProgress ? 'Hide progress' : 'Show progress'}
+                  >
+                    {showGoalProgress ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                )}
               </div>
               <Link href="/review" className="text-xs text-indigo-400">Performance →</Link>
             </div>
@@ -199,15 +239,27 @@ export default function TodayPage() {
               <p className="text-sm text-muted"><Link href="/goals" className="text-indigo-400">Set goals →</Link></p>
             ) : (
               <div className="space-y-3">
-                {dash.goalProgress.map(goal => (
-                  <div key={goal.id}>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-primary">{goal.title}</span>
-                      <span className="text-xs text-muted">{goalProgressPercent(goal)}%</span>
-                    </div>
-                    <ProgressBar value={goalProgressPercent(goal)} size="sm" />
-                  </div>
-                ))}
+                {dash.goalProgress.map(goal => {
+                  const pct = goalProgressPercent(goal);
+                  return (
+                    <button
+                      key={goal.id}
+                      type="button"
+                      onClick={() => setShowGoalProgress(v => !v)}
+                      className="w-full text-left rounded-lg hover:bg-raised/50 transition-colors -mx-1 px-1 py-0.5"
+                    >
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm text-primary">{goal.title}</span>
+                        <span className="text-xs text-muted">{showGoalProgress ? `${pct}%` : '***'}</span>
+                      </div>
+                      {showGoalProgress ? (
+                        <ProgressBar value={pct} size="sm" />
+                      ) : (
+                        <div className="h-1.5 bg-overlay rounded-full" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>

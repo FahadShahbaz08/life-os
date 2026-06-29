@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   userName: '',
   notificationsEnabled: false,
   notifiedReminderIds: [],
+  googleCalendarSyncEnabled: true,
 };
 
 export function createEmptyState(): AppState {
@@ -93,6 +94,7 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
       tags: [],
       progressNotes: t.progressNotes,
       isTopPriority: false,
+      googleEventId: null,
       completedAt: t.status === 'done' ? t.updatedAt : null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
@@ -172,10 +174,14 @@ function normalizeProjects(projects: Project[] | undefined, areas: Area[]): Proj
 export function normalizeState(parsed: Partial<AppState>): AppState {
   const empty = createEmptyState();
   const areas = parsed.areas?.length ? parsed.areas : empty.areas;
+  const tasks = (parsed.tasks ?? []).map(t => ({
+    ...t,
+    googleEventId: t.googleEventId ?? null,
+  }));
   return {
     areas,
     projects: normalizeProjects(parsed.projects, areas),
-    tasks: parsed.tasks ?? [],
+    tasks,
     inboxItems: parsed.inboxItems ?? [],
     goals: parsed.goals ?? [],
     habits: parsed.habits ?? [],

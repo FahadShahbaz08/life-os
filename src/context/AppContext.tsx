@@ -10,6 +10,32 @@ import {
 import { loadState, saveState, createActivity, createEmptyState } from '@/lib/storage';
 import { generateId, nowISO } from '@/lib/utils';
 
+async function syncTaskWithGoogleCalendar(
+  task: Task,
+  action: 'create' | 'update' | 'delete',
+  onEventId: (taskId: string, googleEventId: string | null) => void,
+) {
+  try {
+    const res = await fetch('/api/calendar/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, task }),
+    });
+    if (!res.ok) return;
+    const data = await res.json() as { googleEventId?: string | null; skipped?: boolean };
+    if ('googleEventId' in data) {
+      onEventId(task.id, data.googleEventId ?? null);
+    }
+  } catch {
+    // Calendar sync is best-effort; app state remains source of truth.
+  }
+}
+
+function isCalendarMetaOnlyUpdate(data: Partial<Task>): boolean {
+  const keys = Object.keys(data);
+  return keys.length === 1 && keys[0] === 'googleEventId';
+}
+
 type Action =
   | { type: 'HYDRATE'; payload: AppState }
   | { type: 'IMPORT'; payload: AppState }
@@ -256,13 +282,13 @@ export interface AppContextValue {
   addProject: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateProject: (id: string, data: Partial<Project>) => void;
   deleteProject: (id: string) => void;
-  addTask: (data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'>) => void;
+  addTask: (data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => void;
   updateTask: (id: string, data: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   addInboxItem: (data: Omit<InboxItem, 'id' | 'createdAt' | 'processed' | 'convertedToType' | 'convertedToId'>) => void;
   updateInboxItem: (id: string, data: Partial<InboxItem>) => void;
   deleteInboxItem: (id: string) => void;
-  processInboxToTask: (inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'>) => void;
+  processInboxToTask: (inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => void;
   processInboxToNote: (inboxId: string, noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateGoal: (id: string, data: Partial<Goal>) => void;
@@ -320,6 +346,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = React.useState(false);
   const [syncStatus, setSyncStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const skipNextSave = useRef(true);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const applyGoogleEventId = useCallback((taskId: string, googleEventId: string | null) => {
+    dispatch({ type: 'UPDATE_TASK', id: taskId, data: { googleEventId } });
+  }, []);
+
+  const pushTaskToCalendar = useCallback((task: Task, action: 'create' | 'update' | 'delete') => {
+    if (status !== 'authenticated') return;
+    void syncTaskWithGoogleCalendar(task, action, applyGoogleEventId);
+  }, [status, applyGoogleEventId]);
 
   // Load data from cloud when authenticated
   useEffect(() => {
@@ -395,12 +432,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateProject = useCallback((id: string, data: Partial<Project>) => dispatch({ type: 'UPDATE_PROJECT', id, data }), []);
   const deleteProject = useCallback((id: string) => dispatch({ type: 'DELETE_PROJECT', id }), []);
 
-  const addTask = useCallback((data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'>) => {
+  const addTask = useCallback((data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => {
     const now = nowISO();
-    dispatch({ type: 'ADD_TASK', payload: { ...data, id: generateId(), createdAt: now, updatedAt: now, completedAt: null } });
-  }, []);
-  const updateTask = useCallback((id: string, data: Partial<Task>) => dispatch({ type: 'UPDATE_TASK', id, data }), []);
-  const deleteTask = useCallback((id: string) => dispatch({ type: 'DELETE_TASK', id }), []);
+    const task: Task = {
+      ...data,
+      id: generateId(),
+      googleEventId: null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    };
+    dispatch({ type: 'ADD_TASK', payload: task });
+    pushTaskToCalendar(task, 'create');
+  }, [pushTaskToCalendar]);
+
+  const updateTask = useCallback((id: string, data: Partial<Task>) => {
+    const existing = stateRef.current.tasks.find(t => t.id === id);
+    dispatch({ type: 'UPDATE_TASK', id, data });
+    if (!existing || isCalendarMetaOnlyUpdate(data)) return;
+    const merged: Task = { ...existing, ...data, updatedAt: nowISO() };
+    pushTaskToCalendar(merged, 'update');
+  }, [pushTaskToCalendar]);
+
+  const deleteTask = useCallback((id: string) => {
+    const existing = stateRef.current.tasks.find(t => t.id === id);
+    dispatch({ type: 'DELETE_TASK', id });
+    if (existing) pushTaskToCalendar(existing, 'delete');
+  }, [pushTaskToCalendar]);
 
   const addInboxItem = useCallback((data: Omit<InboxItem, 'id' | 'createdAt' | 'processed' | 'convertedToType' | 'convertedToId'>) => {
     dispatch({ type: 'ADD_INBOX', payload: { ...data, id: generateId(), processed: false, convertedToType: null, convertedToId: null, createdAt: nowISO() } });
@@ -408,12 +466,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateInboxItem = useCallback((id: string, data: Partial<InboxItem>) => dispatch({ type: 'UPDATE_INBOX', id, data }), []);
   const deleteInboxItem = useCallback((id: string) => dispatch({ type: 'DELETE_INBOX', id }), []);
 
-  const processInboxToTask = useCallback((inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'>) => {
+  const processInboxToTask = useCallback((inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => {
     const now = nowISO();
-    const task: Task = { ...taskData, id: generateId(), createdAt: now, updatedAt: now, completedAt: null };
+    const task: Task = { ...taskData, id: generateId(), googleEventId: null, createdAt: now, updatedAt: now, completedAt: null };
     dispatch({ type: 'ADD_TASK', payload: task });
     dispatch({ type: 'UPDATE_INBOX', id: inboxId, data: { processed: true, convertedToType: 'task', convertedToId: task.id } });
-  }, []);
+    pushTaskToCalendar(task, 'create');
+  }, [pushTaskToCalendar]);
 
   const processInboxToNote = useCallback((inboxId: string, noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     const note = makeEntity<Note>(noteData);

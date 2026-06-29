@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
@@ -12,6 +12,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useApp } from '@/context/AppContext';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
 import { useToastContext } from '@/context/ToastContext';
+import GoogleCalendarConnect from '@/components/settings/GoogleCalendarConnect';
 
 const MAIN_NAV = [
   { href: '/', label: 'Today', icon: LayoutGrid },
@@ -88,6 +89,9 @@ export default function Sidebar() {
               {syncStatus === 'error' && <span className="text-red-400 ml-1">· sync error</span>}
             </div>
           )}
+          <Suspense fallback={null}>
+            <GoogleCalendarConnect collapsed={collapsed} />
+          </Suspense>
           <button onClick={toggleTheme} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-secondary hover:bg-raised">
             {theme === 'dark' ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
             {!collapsed && (theme === 'dark' ? 'Light mode' : 'Dark mode')}
