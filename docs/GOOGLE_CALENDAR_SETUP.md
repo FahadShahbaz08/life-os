@@ -152,9 +152,29 @@ A calendar event is created when **all** of these are true:
 | `description`, `progressNotes` | `description` |
 | `dueDate` only | All-day event (`start.date` / `end.date`) |
 | `dueDate` + `dueTime` | Timed event, 30-minute duration |
+| `dueTime` set | Popup reminders at event time and 10 minutes before |
+| `followUpIntervalMinutes` | Life OS browser follow-ups only (see below) |
 | `id` | Included in description for debugging |
 
-### When events are updated or removed
+### Due time & notifications
+
+- Set **Due Time** in the task form (next to Due Date) for a timed calendar block (e.g. 7:00 PM).
+- Google Calendar receives popup reminders at **event time** and **10 minutes before** (timed tasks only).
+- All-day tasks (date only, no time) use your Google Calendar default all-day reminders.
+
+### Follow-up reminders if not marked done
+
+Google Calendar **cannot** know whether a Life OS task is completed, so it cannot nag you after the event if you skip it.
+
+Life OS handles follow-ups in the browser instead:
+
+1. Set **Follow-up if not done** on the task (15 min, 30 min, 1 hr, 2 hr).
+2. Enable **Alerts** on the Today page (browser notifications).
+3. After the due time passes, Life OS sends repeat alerts on your chosen interval until you mark the task done.
+
+Default follow-up interval for new tasks: `settings.defaultFollowUpIntervalMinutes` (30 minutes).
+
+---
 
 | App action | Calendar action |
 |------------|-----------------|

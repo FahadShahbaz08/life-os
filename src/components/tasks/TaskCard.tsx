@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Edit2, Trash2, Calendar, ChevronDown, ChevronUp, CheckCircle2, Circle, Clock, Star } from 'lucide-react';
 import { Task } from '@/types';
 import { PriorityBadge, TaskStatusBadge, FocusQueueBadge } from '@/components/ui/Badge';
-import { formatDate, isOverdue, isDueToday } from '@/lib/utils';
+import { formatDate, isOverdue, isDueToday, formatDueTime } from '@/lib/utils';
 
 interface Props {
   task: Task;
@@ -58,6 +58,12 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusToggle, onTog
                 <span className={`inline-flex items-center gap-1 text-xs ${overdue ? 'text-red-400 font-medium' : dueToday ? 'text-amber-400 font-medium' : 'text-muted'}`}>
                   <Calendar size={10} />
                   {dueToday ? 'Today' : overdue ? `Overdue · ${formatDate(task.dueDate)}` : formatDate(task.dueDate)}
+                  {task.dueTime && (
+                    <>
+                      <Clock size={10} />
+                      {formatDueTime(task.dueTime)}
+                    </>
+                  )}
                 </span>
               )}
             </div>

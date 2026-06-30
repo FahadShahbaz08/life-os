@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: false,
   notifiedReminderIds: [],
   googleCalendarSyncEnabled: true,
+  defaultFollowUpIntervalMinutes: 30,
 };
 
 export function createEmptyState(): AppState {
@@ -95,6 +96,7 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
       progressNotes: t.progressNotes,
       isTopPriority: false,
       googleEventId: null,
+      followUpIntervalMinutes: null,
       completedAt: t.status === 'done' ? t.updatedAt : null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
@@ -177,6 +179,7 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
   const tasks = (parsed.tasks ?? []).map(t => ({
     ...t,
     googleEventId: t.googleEventId ?? null,
+    followUpIntervalMinutes: t.followUpIntervalMinutes ?? null,
   }));
   return {
     areas,

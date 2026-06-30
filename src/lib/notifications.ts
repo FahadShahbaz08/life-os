@@ -1,4 +1,5 @@
-import { AppState } from '@/types';
+import { AppState, Task } from '@/types';
+import { taskDueDateTimeMs } from '@/lib/utils';
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === 'undefined' || !('Notification' in window)) return false;
@@ -28,6 +29,42 @@ export interface NotificationItem {
   body: string;
 }
 
+function collectTaskNotifications(task: Task, nowMs: number, alreadyNotified: string[]): NotificationItem[] {
+  if (task.status === 'completed' || task.status === 'archived') return [];
+
+  const dueMs = taskDueDateTimeMs(task);
+  if (dueMs === null) return [];
+
+  const items: NotificationItem[] = [];
+  const dueKey = `task-due-${task.id}`;
+
+  if (nowMs >= dueMs && nowMs < dueMs + 90_000 && !alreadyNotified.includes(dueKey)) {
+    const timeLabel = task.dueTime ? ` (${task.dueTime})` : '';
+    items.push({
+      id: dueKey,
+      title: 'Task due now',
+      body: `${task.title}${timeLabel}`,
+    });
+  }
+
+  if (task.followUpIntervalMinutes && nowMs > dueMs) {
+    const intervalMs = task.followUpIntervalMinutes * 60_000;
+    const intervalsPassed = Math.floor((nowMs - dueMs) / intervalMs);
+    if (intervalsPassed >= 1) {
+      const followUpKey = `task-followup-${task.id}-${intervalsPassed}`;
+      if (!alreadyNotified.includes(followUpKey)) {
+        items.push({
+          id: followUpKey,
+          title: 'Task still pending',
+          body: `${task.title} — mark done when complete`,
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
 export function collectDueNotifications(state: AppState, alreadyNotified: string[]): NotificationItem[] {
   const items: NotificationItem[] = [];
   const now = new Date();
@@ -43,19 +80,21 @@ export function collectDueNotifications(state: AppState, alreadyNotified: string
       }
     });
 
-  state.tasks
-    .filter(t => t.status !== 'completed' && t.status !== 'archived')
-    .forEach(t => {
-      if (t.dueDate && t.dueDate < today && !alreadyNotified.includes(`overdue-${t.id}`)) {
-        items.push({ id: `overdue-${t.id}`, title: 'Overdue task', body: t.title });
+  state.tasks.forEach(t => {
+    items.push(...collectTaskNotifications(t, nowMs, alreadyNotified));
+
+    if (t.status === 'completed' || t.status === 'archived') return;
+
+    if (t.dueDate && t.dueDate < today && !alreadyNotified.includes(`overdue-${t.id}`)) {
+      items.push({ id: `overdue-${t.id}`, title: 'Overdue task', body: t.title });
+    }
+    if (t.dueDate === today && !t.dueTime && !alreadyNotified.includes(`today-${t.id}`)) {
+      const hour = now.getHours();
+      if (hour >= 8 && hour <= 9) {
+        items.push({ id: `today-${t.id}`, title: 'Due today', body: t.title });
       }
-      if (t.dueDate === today && !alreadyNotified.includes(`today-${t.id}`)) {
-        const hour = now.getHours();
-        if (hour >= 8 && hour <= 9) {
-          items.push({ id: `today-${t.id}`, title: 'Due today', body: t.title });
-        }
-      }
-    });
+    }
+  });
 
   state.habits
     .filter(h => h.isActive && h.frequency === 'daily')

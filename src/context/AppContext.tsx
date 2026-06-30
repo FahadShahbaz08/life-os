@@ -438,6 +438,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...data,
       id: generateId(),
       googleEventId: null,
+      followUpIntervalMinutes: data.followUpIntervalMinutes ?? null,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
@@ -468,7 +469,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const processInboxToTask = useCallback((inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => {
     const now = nowISO();
-    const task: Task = { ...taskData, id: generateId(), googleEventId: null, createdAt: now, updatedAt: now, completedAt: null };
+    const task: Task = { ...taskData, id: generateId(), googleEventId: null, followUpIntervalMinutes: taskData.followUpIntervalMinutes ?? null, createdAt: now, updatedAt: now, completedAt: null };
     dispatch({ type: 'ADD_TASK', payload: task });
     dispatch({ type: 'UPDATE_INBOX', id: inboxId, data: { processed: true, convertedToType: 'task', convertedToId: task.id } });
     pushTaskToCalendar(task, 'create');

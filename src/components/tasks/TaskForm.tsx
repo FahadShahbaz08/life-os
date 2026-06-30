@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Priority, TaskStatus, FocusQueue } from '@/types';
 import { PRIORITY_LABELS, TASK_STATUS_LABELS, FOCUS_QUEUE_LABELS, todayISO } from '@/lib/utils';
-import { FORM_INPUT, FORM_SELECT } from '@/lib/constants';
+import { FORM_INPUT, FORM_SELECT, FOLLOW_UP_INTERVALS } from '@/lib/constants';
+import { buildTaskReminderAt } from '@/lib/utils';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { useApp } from '@/context/AppContext';
 
@@ -14,6 +15,7 @@ export interface TaskFormData {
   priority: Priority;
   dueDate: string | null;
   dueTime: string | null;
+  followUpIntervalMinutes: number | null;
   focusQueue: FocusQueue | null;
   areaId: string | null;
   projectId: string | null;
@@ -47,6 +49,9 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
   const [priority, setPriority] = useState<Priority>(task?.priority ?? defaultPriority ?? 'medium');
   const [dueDate, setDueDate] = useState(task?.dueDate ?? defaultDueDate ?? '');
   const [dueTime, setDueTime] = useState(task?.dueTime ?? '');
+  const [followUpIntervalMinutes, setFollowUpIntervalMinutes] = useState<number | null>(
+    task?.followUpIntervalMinutes ?? state.settings.defaultFollowUpIntervalMinutes ?? null
+  );
   const [focusQueue, setFocusQueue] = useState<FocusQueue | ''>(task?.focusQueue ?? defaultFocusQueue ?? '');
   const [areaId, setAreaId] = useState(task?.areaId ?? defaultAreaId ?? '');
   const [projectId, setProjectId] = useState(task?.projectId ?? defaultProjectId ?? '');
@@ -67,6 +72,7 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
       priority,
       dueDate: dueDate || null,
       dueTime: dueTime || null,
+      followUpIntervalMinutes,
       focusQueue: focusQueue || null,
       areaId: areaId || null,
       projectId: projectId || null,
@@ -117,11 +123,44 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
                 <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={FORM_INPUT} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-secondary mb-1.5">Focus Queue</label>
-                <select value={focusQueue} onChange={e => setFocusQueue(e.target.value as FocusQueue | '')} className={FORM_SELECT}>
-                  {FOCUS_QUEUES.map(q => <option key={q || 'none'} value={q}>{q ? FOCUS_QUEUE_LABELS[q] : 'None'}</option>)}
-                </select>
+                <label className="block text-xs font-medium text-secondary mb-1.5">Due Time</label>
+                <input
+                  type="time"
+                  value={dueTime}
+                  onChange={e => setDueTime(e.target.value)}
+                  className={FORM_INPUT}
+                  disabled={!dueDate}
+                />
               </div>
+            </div>
+            {dueDate && (
+              <p className="text-[11px] text-muted -mt-2">
+                Set a due time for a timed Google Calendar event and notification at that hour.
+                {!dueTime && ' Without a time, the calendar entry is all-day only.'}
+              </p>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Follow-up if not done</label>
+              <select
+                value={followUpIntervalMinutes ?? ''}
+                onChange={e => setFollowUpIntervalMinutes(e.target.value ? Number(e.target.value) : null)}
+                className={FORM_SELECT}
+                disabled={!dueDate}
+              >
+                {FOLLOW_UP_INTERVALS.map(opt => (
+                  <option key={opt.label} value={opt.value ?? ''}>{opt.label}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted mt-1.5">
+                Life OS browser alerts repeat on this interval after the due time until you mark the task done.
+                Enable alerts from the Today page.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Focus Queue</label>
+              <select value={focusQueue} onChange={e => setFocusQueue(e.target.value as FocusQueue | '')} className={FORM_SELECT}>
+                {FOCUS_QUEUES.map(q => <option key={q || 'none'} value={q}>{q ? FOCUS_QUEUE_LABELS[q] : 'None'}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Tags (comma-separated)</label>
@@ -155,7 +194,7 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
 export function taskFormToEntity(data: TaskFormData) {
   return {
     ...data,
-    reminderAt: null,
+    reminderAt: buildTaskReminderAt(data.dueDate, data.dueTime),
     recurrenceRule: null,
     isTopPriority: data.isTopPriority,
   };

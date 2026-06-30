@@ -7,6 +7,14 @@ function getTimezone(): string {
   return process.env.CALENDAR_TIMEZONE ?? 'Asia/Karachi';
 }
 
+function calendarReminders(task: Task) {
+  const overrides: { method: 'popup'; minutes: number }[] = [{ method: 'popup', minutes: 0 }];
+  if (task.dueTime) {
+    overrides.push({ method: 'popup', minutes: 10 });
+  }
+  return { useDefault: false, overrides };
+}
+
 function addMinutesToTime(date: string, time: string, minutes: number): { date: string; time: string } {
   const [h, m] = time.split(':').map(Number);
   const d = new Date(`${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
@@ -28,10 +36,15 @@ export function taskToCalendarEvent(task: Task) {
   const description = [
     task.description,
     task.progressNotes ? `Notes: ${task.progressNotes}` : '',
+    task.followUpIntervalMinutes
+      ? `Follow-up every ${task.followUpIntervalMinutes} min in Life OS if not marked done.`
+      : '',
     `Life OS task ID: ${task.id}`,
   ].filter(Boolean).join('\n\n');
 
   if (!task.dueDate) return null;
+
+  const reminders = calendarReminders(task);
 
   if (task.dueTime) {
     const end = addMinutesToTime(task.dueDate, task.dueTime, 30);
@@ -40,6 +53,7 @@ export function taskToCalendarEvent(task: Task) {
       description,
       start: { dateTime: `${task.dueDate}T${task.dueTime}:00`, timeZone: tz },
       end: { dateTime: `${end.date}T${end.time}:00`, timeZone: tz },
+      reminders,
     };
   }
 
@@ -48,6 +62,7 @@ export function taskToCalendarEvent(task: Task) {
     description,
     start: { date: task.dueDate },
     end: { date: addDays(task.dueDate, 1) },
+    reminders: { useDefault: true },
   };
 }
 

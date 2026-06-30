@@ -30,12 +30,26 @@ export function formatDateTime(dateStr: string): string {
   }
 }
 
-export function formatTime(dateStr: string): string {
-  try {
-    return format(parseISO(dateStr), 'h:mm a');
-  } catch {
-    return '—';
-  }
+export function formatDueTime(time: string | null): string {
+  if (!time) return '';
+  const [h, m] = time.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return time;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return format(d, 'h:mm a');
+}
+
+export function taskDueDateTimeMs(task: { dueDate: string | null; dueTime: string | null }): number | null {
+  if (!task.dueDate) return null;
+  const time = task.dueTime ?? '09:00';
+  const d = new Date(`${task.dueDate}T${time}:00`);
+  return Number.isNaN(d.getTime()) ? null : d.getTime();
+}
+
+export function buildTaskReminderAt(dueDate: string | null, dueTime: string | null): string | null {
+  if (!dueDate) return null;
+  const time = dueTime ?? '09:00';
+  return `${dueDate}T${time}:00`;
 }
 
 export function isOverdue(dateStr: string | null): boolean {

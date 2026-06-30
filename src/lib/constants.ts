@@ -68,6 +68,13 @@ export const INBOX_TYPES = [
   { value: 'plan', label: 'Future Plan' },
 ] as const;
 
+export const FOLLOW_UP_INTERVALS: { value: number | null; label: string }[] = [
+  { value: null, label: 'No follow-up' },
+  { value: 15, label: 'Every 15 minutes' },
+  { value: 30, label: 'Every 30 minutes' },
+  { value: 60, label: 'Every 1 hour' },
+  { value: 120, label: 'Every 2 hours' },
+];
 export const FORM_INPUT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-accent';
 export const FORM_SELECT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-accent';
 export const BTN_PRIMARY = 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 rounded-xl transition-colors shadow-sm disabled:opacity-40';
