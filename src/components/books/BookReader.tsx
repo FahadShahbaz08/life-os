@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, Highlighter, StickyNote, Trash2, Loader2, BookOpen, List,
 } from 'lucide-react';
 import type { AnnotationType, BookAnnotation, BookPublic } from '@/lib/books';
+import { getCachedPdf, setCachedPdf } from '@/lib/pdf-local-cache';
 import { useToastContext } from '@/context/ToastContext';
 import { FORM_INPUT, BTN_PRIMARY, BTN_SECONDARY } from '@/lib/constants';
 
@@ -25,6 +26,7 @@ export default function BookReader({ bookId }: Props) {
   const [page, setPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadHint, setLoadHint] = useState('Opening book…');
   const [rendering, setRendering] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
   const [noteText, setNoteText] = useState('');
@@ -54,6 +56,7 @@ export default function BookReader({ bookId }: Props) {
     let cancelled = false;
     (async () => {
       try {
+        setLoadHint('Loading book…');
         const metaRes = await fetch(`/api/books/${bookId}`);
         if (!metaRes.ok) throw new Error('Book not found');
         const meta = (await metaRes.json()) as BookPublic;
@@ -68,9 +71,32 @@ export default function BookReader({ bookId }: Props) {
         pdfjs.GlobalWorkerOptions.workerSrc =
           `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-        const pdfRes = await fetch(`/api/books/${bookId}/pdf`);
-        if (!pdfRes.ok) throw new Error('PDF missing');
-        const data = new Uint8Array(await pdfRes.arrayBuffer());
+        const cacheMeta = {
+          id: meta.id,
+          pdfSizeBytes: meta.pdfSizeBytes,
+          pdfCompressedSize: meta.pdfCompressedSize,
+          pdfOriginalName: meta.pdfOriginalName,
+        };
+
+        let data: Uint8Array;
+        setLoadHint('Checking local cache…');
+        const cached = await getCachedPdf(cacheMeta);
+        if (cached) {
+          setLoadHint('Opening from device cache…');
+          data = new Uint8Array(cached);
+        } else {
+          setLoadHint('Downloading PDF (saved on this device)…');
+          const pdfRes = await fetch(`/api/books/${bookId}/pdf`);
+          if (!pdfRes.ok) throw new Error('PDF missing');
+          const buffer = await pdfRes.arrayBuffer();
+          data = new Uint8Array(buffer);
+          if (!cancelled) {
+            // Copy for IDB — transferables/mutations can detach the buffer
+            await setCachedPdf(cacheMeta, buffer.slice(0));
+          }
+        }
+
+        if (cancelled) return;
         const doc = await pdfjs.getDocument({ data }).promise;
         if (cancelled) {
           void doc.destroy();
@@ -218,7 +244,7 @@ export default function BookReader({ bookId }: Props) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full min-h-[60vh] text-muted gap-2">
-        <Loader2 className="animate-spin" size={18} /> Opening book…
+        <Loader2 className="animate-spin" size={18} /> {loadHint}
       </div>
     );
   }

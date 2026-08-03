@@ -6,7 +6,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export const runtime = 'nodejs';
 
-// ~20MB limit soft check
+// Soft limit for direct multipart uploads (platform often caps ~4.5MB; prefer /chunk)
 const MAX_BYTES = 20 * 1024 * 1024;
 
 export async function GET(_req: Request, ctx: Ctx) {

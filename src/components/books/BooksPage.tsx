@@ -7,6 +7,8 @@ import {
   FileText, Highlighter, Loader2,
 } from 'lucide-react';
 import type { BookPublic, BookStatus } from '@/lib/books';
+import { uploadBookPdf } from '@/lib/upload-book-pdf-client';
+import { clearCachedPdf } from '@/lib/pdf-local-cache';
 import { useToastContext } from '@/context/ToastContext';
 import PageHeader from '@/components/ui/PageHeader';
 import EmptyState from '@/components/ui/EmptyState';
@@ -54,6 +56,9 @@ export default function BooksPage() {
       const res = await fetch(`/api/books/${book.id}?mode=${mode}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('delete failed');
       const data = await res.json() as { book: BookPublic | null };
+      if (mode === 'all' || mode === 'pdf' || mode === 'pdf_and_notes') {
+        void clearCachedPdf(book.id);
+      }
       if (mode === 'all' || !data.book) {
         setBooks(prev => prev.filter(b => b.id !== book.id));
       } else {
@@ -69,14 +74,8 @@ export default function BooksPage() {
   const uploadPdf = async (bookId: string, file: File) => {
     setUploadingId(bookId);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch(`/api/books/${bookId}/pdf`, { method: 'POST', body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error || 'Upload failed');
-      }
-      const updated = await res.json() as BookPublic;
+      await clearCachedPdf(bookId);
+      const updated = await uploadBookPdf(bookId, file);
       setBooks(prev => prev.map(b => b.id === bookId ? updated : b));
       toast('PDF uploaded & compressed');
     } catch (e) {
@@ -404,7 +403,7 @@ function AddBookModal({
               </div>
             )}
             <div>
-              <label className="text-[11px] text-muted mb-1 block">PDF (optional — under 20MB)</label>
+                  <label className="text-[11px] text-muted mb-1 block">PDF (optional — up to 20MB; uploads in chunks)</label>
               <input
                 type="file"
                 accept="application/pdf,.pdf"
