@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
-  Sun, Moon, ChevronLeft, Brain, LayoutGrid, Flag, FileText, Wallet,
+  Sun, Moon, ChevronLeft, Brain, LayoutGrid, Flag, FileText, Wallet, BookOpen,
   CalendarCheck, Telescope, Timer, Search, Plus, ListTodo, TrendingUp, FolderKanban, LogOut,
   Cloud, CloudOff, RefreshCw,
 } from 'lucide-react';
@@ -21,6 +21,7 @@ const MAIN_NAV = [
   { href: '/trading', label: 'Trading', icon: TrendingUp },
   { href: '/goals', label: 'Goals', icon: Flag },
   { href: '/notes', label: 'Notes', icon: FileText },
+  { href: '/books', label: 'Books', icon: BookOpen },
   { href: '/finance', label: 'Finance', icon: Wallet },
   { href: '/review', label: 'Performance', icon: CalendarCheck },
   { href: '/vision', label: 'Life Vision', icon: Telescope },

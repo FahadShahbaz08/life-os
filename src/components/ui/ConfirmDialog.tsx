@@ -48,12 +48,12 @@ export default function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
-            className={`flex-1 px-4 py-2 text-sm font-medium text-white rounded-xl transition-colors ${
+            className={`flex-1 px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
               isSuccess
-                ? 'bg-emerald-600 hover:bg-emerald-500'
+                ? 'text-white bg-emerald-600 hover:bg-emerald-500'
                 : isDanger
-                  ? 'bg-red-500 hover:bg-red-600'
-                  : 'bg-[var(--accent)] hover:bg-[var(--accent-hover)]'
+                  ? 'text-white bg-red-500 hover:bg-red-600'
+                  : 'bg-[var(--accent)] text-[var(--bg-base)] hover:opacity-90'
             }`}
           >
             {confirmLabel}
