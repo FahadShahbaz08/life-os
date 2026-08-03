@@ -6,35 +6,10 @@ import {
   AppState, FilterState, Area, Project, Task, InboxItem, Goal, Habit,
   HabitCompletion, Note, Reminder, WaitingFor, FinanceReceivable, FinancePayable,
   FinanceExpense, VisionItem, WeeklyReview, FocusSession, AppSettings, Trade, FinanceIncome,
+  AppNotification,
 } from '@/types';
 import { loadState, saveState, createActivity, createEmptyState } from '@/lib/storage';
 import { generateId, nowISO } from '@/lib/utils';
-
-async function syncTaskWithGoogleCalendar(
-  task: Task,
-  action: 'create' | 'update' | 'delete',
-  onEventId: (taskId: string, googleEventId: string | null) => void,
-) {
-  try {
-    const res = await fetch('/api/calendar/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, task }),
-    });
-    if (!res.ok) return;
-    const data = await res.json() as { googleEventId?: string | null; skipped?: boolean };
-    if ('googleEventId' in data) {
-      onEventId(task.id, data.googleEventId ?? null);
-    }
-  } catch {
-    // Calendar sync is best-effort; app state remains source of truth.
-  }
-}
-
-function isCalendarMetaOnlyUpdate(data: Partial<Task>): boolean {
-  const keys = Object.keys(data);
-  return keys.length === 1 && keys[0] === 'googleEventId';
-}
 
 type Action =
   | { type: 'HYDRATE'; payload: AppState }
@@ -76,8 +51,10 @@ type Action =
   | { type: 'UPDATE_PAYABLE'; id: string; data: Partial<FinancePayable> }
   | { type: 'DELETE_PAYABLE'; id: string }
   | { type: 'ADD_EXPENSE'; payload: FinanceExpense }
+  | { type: 'UPDATE_EXPENSE'; id: string; data: Partial<FinanceExpense> }
   | { type: 'DELETE_EXPENSE'; id: string }
-  | { type: 'ADD_INCOME'; payload: import('@/types').FinanceIncome }
+  | { type: 'ADD_INCOME'; payload: FinanceIncome }
+  | { type: 'UPDATE_INCOME'; id: string; data: Partial<FinanceIncome> }
   | { type: 'DELETE_INCOME'; id: string }
   | { type: 'ADD_VISION'; payload: VisionItem }
   | { type: 'UPDATE_VISION'; id: string; data: Partial<VisionItem> }
@@ -88,7 +65,12 @@ type Action =
   | { type: 'ADD_TRADE'; payload: Trade }
   | { type: 'UPDATE_TRADE'; id: string; data: Partial<Trade> }
   | { type: 'DELETE_TRADE'; id: string }
-  | { type: 'TOGGLE_HABIT_COMPLETION'; habitId: string; date: string };
+  | { type: 'TOGGLE_HABIT_COMPLETION'; habitId: string; date: string }
+  | { type: 'ADD_NOTIFICATION'; payload: AppNotification }
+  | { type: 'MARK_NOTIFICATION_READ'; id: string }
+  | { type: 'MARK_ALL_NOTIFICATIONS_READ' }
+  | { type: 'CLEAR_NOTIFICATIONS' }
+  | { type: 'DISMISS_NOTIFICATION'; id: string };
 
 function pushActivity(state: AppState, entry: ReturnType<typeof createActivity>): AppState {
   return { ...state, activity: [entry, ...state.activity].slice(0, 2000) };
@@ -136,7 +118,9 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         tasks: state.tasks.map(t => t.id === action.id ? {
           ...t, ...action.data, updatedAt: nowISO(),
-          completedAt: action.data.status === 'completed' ? nowISO() : action.data.status ? t.completedAt : t.completedAt,
+          completedAt: action.data.status === 'completed'
+            ? nowISO()
+            : (action.data.status !== undefined ? null : t.completedAt),
         } : t),
       }, createActivity(completed ? 'task_completed' : 'task_updated', completed ? `Task "${task?.title}" completed` : `Task updated`, 'task', action.id));
     }
@@ -211,11 +195,15 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'ADD_EXPENSE':
       return { ...state, expenses: [action.payload, ...state.expenses] };
+    case 'UPDATE_EXPENSE':
+      return { ...state, expenses: state.expenses.map(e => e.id === action.id ? { ...e, ...action.data } : e) };
     case 'DELETE_EXPENSE':
       return { ...state, expenses: state.expenses.filter(e => e.id !== action.id) };
 
     case 'ADD_INCOME':
       return { ...state, incomes: [action.payload, ...state.incomes] };
+    case 'UPDATE_INCOME':
+      return { ...state, incomes: state.incomes.map(i => i.id === action.id ? { ...i, ...action.data } : i) };
     case 'DELETE_INCOME':
       return { ...state, incomes: state.incomes.filter(i => i.id !== action.id) };
 
@@ -257,6 +245,22 @@ function reducer(state: AppState, action: Action): AppState {
         }],
       }, createActivity('habit_completed', `Habit "${habit?.name ?? 'Habit'}" logged`, 'habit', action.habitId));
     }
+
+    case 'ADD_NOTIFICATION': {
+      if (state.notifications.some(n => n.id === action.payload.id)) return state;
+      return { ...state, notifications: [action.payload, ...state.notifications].slice(0, 100) };
+    }
+    case 'MARK_NOTIFICATION_READ':
+      return {
+        ...state,
+        notifications: state.notifications.map(n => n.id === action.id ? { ...n, read: true } : n),
+      };
+    case 'MARK_ALL_NOTIFICATIONS_READ':
+      return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) };
+    case 'CLEAR_NOTIFICATIONS':
+      return { ...state, notifications: [] };
+    case 'DISMISS_NOTIFICATION':
+      return { ...state, notifications: state.notifications.filter(n => n.id !== action.id) };
 
     default:
       return state;
@@ -313,8 +317,10 @@ export interface AppContextValue {
   updatePayable: (id: string, data: Partial<FinancePayable>) => void;
   deletePayable: (id: string) => void;
   addExpense: (data: Omit<FinanceExpense, 'id' | 'createdAt'>) => void;
+  updateExpense: (id: string, data: Partial<FinanceExpense>) => void;
   deleteExpense: (id: string) => void;
   addIncome: (data: Omit<FinanceIncome, 'id' | 'createdAt'>) => void;
+  updateIncome: (id: string, data: Partial<FinanceIncome>) => void;
   deleteIncome: (id: string) => void;
   addVisionItem: (data: Omit<VisionItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateVisionItem: (id: string, data: Partial<VisionItem>) => void;
@@ -327,7 +333,14 @@ export interface AppContextValue {
   deleteTrade: (id: string) => void;
   setTopPriorities: (taskIds: string[]) => void;
   toggleTopPriority: (taskId: string) => void;
-  syncStatus: 'idle' | 'saving' | 'saved' | 'error';
+  pushNotification: (data: Omit<AppNotification, 'id' | 'createdAt' | 'read'> & { id?: string }) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  dismissNotification: (id: string) => void;
+  clearNotifications: () => void;
+  syncStatus: 'idle' | 'saving' | 'saved' | 'error' | 'offline';
+  isOnline: boolean;
+  forceSync: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -344,25 +357,94 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, createEmptyState());
   const [filters, setFiltersState] = React.useState<FilterState>(DEFAULT_FILTERS);
   const [hydrated, setHydrated] = React.useState(false);
-  const [syncStatus, setSyncStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [syncStatus, setSyncStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error' | 'offline'>('idle');
+  const [isOnline, setIsOnline] = React.useState(true);
   const skipNextSave = useRef(true);
   const stateRef = useRef(state);
+  const pendingSync = useRef(false);
+  const syncInFlight = useRef(false);
   stateRef.current = state;
 
-  const applyGoogleEventId = useCallback((taskId: string, googleEventId: string | null) => {
-    dispatch({ type: 'UPDATE_TASK', id: taskId, data: { googleEventId } });
+  const pushToCloud = useCallback(async (payload: AppState): Promise<boolean> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSyncStatus('offline');
+      pendingSync.current = true;
+      return false;
+    }
+    if (syncInFlight.current) {
+      pendingSync.current = true;
+      return false;
+    }
+    syncInFlight.current = true;
+    setSyncStatus('saving');
+    try {
+      saveState(payload);
+      const res = await fetch('/api/sync', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('save failed');
+      setSyncStatus('saved');
+      pendingSync.current = false;
+      return true;
+    } catch {
+      setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error');
+      pendingSync.current = true;
+      saveState(payload);
+      return false;
+    } finally {
+      syncInFlight.current = false;
+    }
   }, []);
 
-  const pushTaskToCalendar = useCallback((task: Task, action: 'create' | 'update' | 'delete') => {
+  const forceSync = useCallback(() => {
     if (status !== 'authenticated') return;
-    void syncTaskWithGoogleCalendar(task, action, applyGoogleEventId);
-  }, [status, applyGoogleEventId]);
+    void pushToCloud(stateRef.current);
+  }, [status, pushToCloud]);
+
+  // Online/offline handling — auto-retry when connectivity returns
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const goOnline = () => {
+      setIsOnline(true);
+      if (status === 'authenticated' && (pendingSync.current || syncStatus === 'error' || syncStatus === 'offline')) {
+        void pushToCloud(stateRef.current);
+      }
+    };
+    const goOffline = () => {
+      setIsOnline(false);
+      setSyncStatus('offline');
+      pendingSync.current = true;
+    };
+
+    setIsOnline(navigator.onLine);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, [status, pushToCloud, syncStatus]);
+
+  // Periodic retry while waiting for a successful sync
+  useEffect(() => {
+    if (status !== 'authenticated' || !hydrated) return;
+    const id = setInterval(() => {
+      if (pendingSync.current && navigator.onLine && !syncInFlight.current) {
+        void pushToCloud(stateRef.current);
+      }
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [status, hydrated, pushToCloud]);
 
   // Load data from cloud when authenticated
   useEffect(() => {
     if (status === 'loading') return;
 
     if (status === 'unauthenticated') {
+      dispatch({ type: 'HYDRATE', payload: loadState() });
       setHydrated(true);
       return;
     }
@@ -380,7 +462,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => {
-        if (!cancelled) dispatch({ type: 'HYDRATE', payload: loadState() });
+        if (!cancelled) {
+          dispatch({ type: 'HYDRATE', payload: loadState() });
+          pendingSync.current = true;
+          setSyncStatus(navigator.onLine ? 'error' : 'offline');
+        }
       })
       .finally(() => {
         if (!cancelled) setHydrated(true);
@@ -389,31 +475,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [status]);
 
-  // Auto-save to cloud (debounced)
+  // Auto-save (debounced) + always keep localStorage warm
   useEffect(() => {
-    if (!hydrated || status !== 'authenticated') return;
+    if (!hydrated) return;
+    saveState(state);
+
+    if (status !== 'authenticated') return;
 
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return;
     }
 
-    setSyncStatus('saving');
     const timer = setTimeout(() => {
-      fetch('/api/sync', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state),
-      })
-        .then(res => {
-          if (!res.ok) throw new Error('save failed');
-          setSyncStatus('saved');
-        })
-        .catch(() => setSyncStatus('error'));
+      void pushToCloud(state);
     }, 900);
 
     return () => clearTimeout(timer);
-  }, [state, hydrated, status]);
+  }, [state, hydrated, status, pushToCloud]);
 
   const setFilters = useCallback((f: Partial<FilterState>) => setFiltersState(prev => ({ ...prev, ...f })), []);
   const resetFilters = useCallback(() => setFiltersState(DEFAULT_FILTERS), []);
@@ -444,22 +523,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       completedAt: null,
     };
     dispatch({ type: 'ADD_TASK', payload: task });
-    pushTaskToCalendar(task, 'create');
-  }, [pushTaskToCalendar]);
+  }, []);
 
   const updateTask = useCallback((id: string, data: Partial<Task>) => {
-    const existing = stateRef.current.tasks.find(t => t.id === id);
     dispatch({ type: 'UPDATE_TASK', id, data });
-    if (!existing || isCalendarMetaOnlyUpdate(data)) return;
-    const merged: Task = { ...existing, ...data, updatedAt: nowISO() };
-    pushTaskToCalendar(merged, 'update');
-  }, [pushTaskToCalendar]);
+  }, []);
 
   const deleteTask = useCallback((id: string) => {
-    const existing = stateRef.current.tasks.find(t => t.id === id);
     dispatch({ type: 'DELETE_TASK', id });
-    if (existing) pushTaskToCalendar(existing, 'delete');
-  }, [pushTaskToCalendar]);
+  }, []);
 
   const addInboxItem = useCallback((data: Omit<InboxItem, 'id' | 'createdAt' | 'processed' | 'convertedToType' | 'convertedToId'>) => {
     dispatch({ type: 'ADD_INBOX', payload: { ...data, id: generateId(), processed: false, convertedToType: null, convertedToId: null, createdAt: nowISO() } });
@@ -472,8 +544,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const task: Task = { ...taskData, id: generateId(), googleEventId: null, followUpIntervalMinutes: taskData.followUpIntervalMinutes ?? null, createdAt: now, updatedAt: now, completedAt: null };
     dispatch({ type: 'ADD_TASK', payload: task });
     dispatch({ type: 'UPDATE_INBOX', id: inboxId, data: { processed: true, convertedToType: 'task', convertedToId: task.id } });
-    pushTaskToCalendar(task, 'create');
-  }, [pushTaskToCalendar]);
+  }, []);
 
   const processInboxToNote = useCallback((inboxId: string, noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     const note = makeEntity<Note>(noteData);
@@ -498,7 +569,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addNote = useCallback((data: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
-    dispatch({ type: 'ADD_NOTE', payload: makeEntity<Note>(data) });
+    dispatch({ type: 'ADD_NOTE', payload: makeEntity<Note>({ ...data, imageUrls: data.imageUrls ?? [] }) });
   }, []);
   const updateNote = useCallback((id: string, data: Partial<Note>) => dispatch({ type: 'UPDATE_NOTE', id, data }), []);
   const deleteNote = useCallback((id: string) => dispatch({ type: 'DELETE_NOTE', id }), []);
@@ -531,10 +602,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addExpense = useCallback((data: Omit<FinanceExpense, 'id' | 'createdAt'>) => {
     dispatch({ type: 'ADD_EXPENSE', payload: { ...data, id: generateId(), createdAt: nowISO() } });
   }, []);
+  const updateExpense = useCallback((id: string, data: Partial<FinanceExpense>) => dispatch({ type: 'UPDATE_EXPENSE', id, data }), []);
   const deleteExpense = useCallback((id: string) => dispatch({ type: 'DELETE_EXPENSE', id }), []);
   const addIncome = useCallback((data: Omit<FinanceIncome, 'id' | 'createdAt'>) => {
     dispatch({ type: 'ADD_INCOME', payload: { ...data, id: generateId(), createdAt: nowISO() } });
   }, []);
+  const updateIncome = useCallback((id: string, data: Partial<FinanceIncome>) => dispatch({ type: 'UPDATE_INCOME', id, data }), []);
   const deleteIncome = useCallback((id: string) => dispatch({ type: 'DELETE_INCOME', id }), []);
 
   const addVisionItem = useCallback((data: Omit<VisionItem, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -572,9 +645,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateTask(taskId, { isTopPriority: !current.includes(taskId) });
   }, [state.settings.topPriorityTaskIds, updateTask]);
 
+  const pushNotification = useCallback((data: Omit<AppNotification, 'id' | 'createdAt' | 'read'> & { id?: string }) => {
+    dispatch({
+      type: 'ADD_NOTIFICATION',
+      payload: {
+        id: data.id ?? generateId(),
+        title: data.title,
+        body: data.body,
+        type: data.type,
+        href: data.href,
+        read: false,
+        createdAt: nowISO(),
+      },
+    });
+  }, []);
+  const markNotificationRead = useCallback((id: string) => dispatch({ type: 'MARK_NOTIFICATION_READ', id }), []);
+  const markAllNotificationsRead = useCallback(() => dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' }), []);
+  const dismissNotification = useCallback((id: string) => dispatch({ type: 'DISMISS_NOTIFICATION', id }), []);
+  const clearNotifications = useCallback(() => dispatch({ type: 'CLEAR_NOTIFICATIONS' }), []);
+
   return (
     <AppContext.Provider value={{
-      state, filters, hydrated, syncStatus, setFilters, resetFilters, importState, updateSettings,
+      state, filters, hydrated, syncStatus, isOnline, forceSync, setFilters, resetFilters, importState, updateSettings,
       addArea, updateArea, deleteArea,
       addProject, updateProject, deleteProject,
       addTask, updateTask, deleteTask,
@@ -586,11 +678,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addWaitingFor, updateWaitingFor, deleteWaitingFor,
       addReceivable, updateReceivable, deleteReceivable,
       addPayable, updatePayable, deletePayable,
-      addExpense, deleteExpense, addIncome, deleteIncome,
+      addExpense, updateExpense, deleteExpense, addIncome, updateIncome, deleteIncome,
       addVisionItem, updateVisionItem, deleteVisionItem,
       addWeeklyReview, updateWeeklyReview,
       addFocusSession, addTrade, updateTrade, deleteTrade,
       setTopPriorities, toggleTopPriority,
+      pushNotification, markNotificationRead, markAllNotificationsRead, dismissNotification, clearNotifications,
     }}>
       {children}
     </AppContext.Provider>

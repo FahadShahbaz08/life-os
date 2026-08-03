@@ -2,21 +2,24 @@
 
 import { useState } from 'react';
 import { Plus, ListTodo } from 'lucide-react';
+import { Task } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
 import PageHeader from '@/components/ui/PageHeader';
 import TaskCard from '@/components/tasks/TaskCard';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
 import EmptyState from '@/components/ui/EmptyState';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { isActiveTask, sortTasksByPriority } from '@/lib/utils';
-import { BTN_PRIMARY } from '@/lib/constants';
+import { BTN_PRIMARY, BTN_TAB_ACTIVE, BTN_TAB_IDLE } from '@/lib/constants';
 
 export default function TasksPage() {
   const { state, addTask, updateTask, deleteTask, toggleTopPriority } = useApp();
   const { toast } = useToastContext();
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<import('@/types').Task | null>(null);
+  const [editing, setEditing] = useState<Task | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
+  const [pendingComplete, setPendingComplete] = useState<Task | null>(null);
 
   const tasks = sortTasksByPriority(
     state.tasks.filter(t => {
@@ -25,6 +28,15 @@ export default function TasksPage() {
       return true;
     })
   );
+
+  const handleStatusToggle = (task: Task) => {
+    if (task.status === 'completed') {
+      updateTask(task.id, { status: 'todo' });
+      toast('Reopened');
+      return;
+    }
+    setPendingComplete(task);
+  };
 
   return (
     <>
@@ -35,7 +47,7 @@ export default function TasksPage() {
 
         <div className="flex gap-2 mb-6">
           {(['active', 'completed', 'all'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 text-xs font-medium rounded-lg capitalize ${filter === f ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-raised text-muted border border-base'}`}>{f}</button>
+            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 text-xs font-medium rounded-lg capitalize border ${filter === f ? BTN_TAB_ACTIVE : BTN_TAB_IDLE}`}>{f}</button>
           ))}
         </div>
 
@@ -48,7 +60,7 @@ export default function TasksPage() {
                 onEdit={() => setEditing(task)}
                 onDelete={() => { deleteTask(task.id); toast('Deleted', 'info'); }}
                 onToggleTopPriority={() => toggleTopPriority(task.id)}
-                onStatusToggle={() => updateTask(task.id, { status: task.status === 'completed' ? 'todo' : 'completed' })}
+                onStatusToggle={() => handleStatusToggle(task)}
               />
             ))}
           </div>
@@ -60,6 +72,21 @@ export default function TasksPage() {
       )}
       {editing && (
         <TaskForm task={editing} onSave={d => { updateTask(editing.id, taskFormToEntity(d)); setEditing(null); toast('Updated'); }} onClose={() => setEditing(null)} />
+      )}
+      {pendingComplete && (
+        <ConfirmDialog
+          title="Mark task complete?"
+          message={`Confirm you finished “${pendingComplete.title}”.`}
+          confirmLabel="Yes, complete"
+          cancelLabel="Not yet"
+          variant="success"
+          onConfirm={() => {
+            updateTask(pendingComplete.id, { status: 'completed' });
+            toast('Done!');
+            setPendingComplete(null);
+          }}
+          onCancel={() => setPendingComplete(null)}
+        />
       )}
     </>
   );

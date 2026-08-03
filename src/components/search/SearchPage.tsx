@@ -8,7 +8,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import { globalSearch } from '@/lib/utils';
 
 const TYPE_PATHS: Record<string, string> = {
-  task: '/tasks', note: '/notes', project: '/projects', goal: '/goals', habit: '/habits', area: '/projects',
+  task: '/tasks', note: '/notes', project: '/projects', goal: '/goals', habit: '/goals', area: '/projects',
 };
 
 export default function SearchPage() {

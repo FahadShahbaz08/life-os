@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Priority, TaskStatus, FocusQueue } from '@/types';
-import { PRIORITY_LABELS, TASK_STATUS_LABELS, FOCUS_QUEUE_LABELS, todayISO } from '@/lib/utils';
+import { PRIORITY_LABELS, TASK_STATUS_LABELS, todayISO } from '@/lib/utils';
 import { FORM_INPUT, FORM_SELECT, FOLLOW_UP_INTERVALS } from '@/lib/constants';
 import { buildTaskReminderAt } from '@/lib/utils';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
@@ -30,7 +30,6 @@ interface Props {
   defaultProjectId?: string | null;
   defaultAreaId?: string | null;
   defaultDueDate?: string;
-  defaultFocusQueue?: FocusQueue;
   defaultPriority?: Priority;
   defaultTopPriority?: boolean;
   onSave: (data: TaskFormData) => void;
@@ -39,9 +38,8 @@ interface Props {
 
 const PRIORITIES: Priority[] = ['low', 'medium', 'high', 'urgent'];
 const STATUSES: TaskStatus[] = ['todo', 'in_progress', 'waiting', 'completed', 'archived'];
-const FOCUS_QUEUES: (FocusQueue | '')[] = ['', 'now', 'next', 'later'];
 
-export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaultDueDate, defaultFocusQueue, defaultPriority, defaultTopPriority, onSave, onClose }: Props) {
+export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaultDueDate, defaultPriority, defaultTopPriority, onSave, onClose }: Props) {
   const { state } = useApp();
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
@@ -52,7 +50,6 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
   const [followUpIntervalMinutes, setFollowUpIntervalMinutes] = useState<number | null>(
     task?.followUpIntervalMinutes ?? state.settings.defaultFollowUpIntervalMinutes ?? null
   );
-  const [focusQueue, setFocusQueue] = useState<FocusQueue | ''>(task?.focusQueue ?? defaultFocusQueue ?? '');
   const [areaId, setAreaId] = useState(task?.areaId ?? defaultAreaId ?? '');
   const [projectId, setProjectId] = useState(task?.projectId ?? defaultProjectId ?? '');
   const [tags, setTags] = useState(task?.tags?.join(', ') ?? '');
@@ -73,7 +70,7 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
       dueDate: dueDate || null,
       dueTime: dueTime || null,
       followUpIntervalMinutes,
-      focusQueue: focusQueue || null,
+      focusQueue: null,
       areaId: areaId || null,
       projectId: projectId || null,
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
@@ -133,12 +130,6 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
                 />
               </div>
             </div>
-            {dueDate && (
-              <p className="text-[11px] text-muted -mt-2">
-                Set a due time for a timed Google Calendar event and notification at that hour.
-                {!dueTime && ' Without a time, the calendar entry is all-day only.'}
-              </p>
-            )}
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Follow-up if not done</label>
               <select
@@ -152,15 +143,8 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
                 ))}
               </select>
               <p className="text-[11px] text-muted mt-1.5">
-                Life OS browser alerts repeat on this interval after the due time until you mark the task done.
-                Enable alerts from the Today page.
+                In-app alerts (and browser alerts if enabled) repeat on this interval after due time.
               </p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Focus Queue</label>
-              <select value={focusQueue} onChange={e => setFocusQueue(e.target.value as FocusQueue | '')} className={FORM_SELECT}>
-                {FOCUS_QUEUES.map(q => <option key={q || 'none'} value={q}>{q ? FOCUS_QUEUE_LABELS[q] : 'None'}</option>)}
-              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Tags (comma-separated)</label>
@@ -182,7 +166,7 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
         </ModalBody>
         <ModalFooter>
           <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm font-medium text-secondary bg-raised hover:bg-base border border-base rounded-xl">Cancel</button>
-          <button type="submit" disabled={!title.trim()} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl disabled:opacity-40">
+          <button type="submit" disabled={!title.trim()} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl disabled:opacity-40">
             {task?.id ? 'Save' : 'Add Task'}
           </button>
         </ModalFooter>

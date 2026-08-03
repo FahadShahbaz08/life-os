@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   userName: '',
   notificationsEnabled: false,
   notifiedReminderIds: [],
-  googleCalendarSyncEnabled: true,
+  googleCalendarSyncEnabled: false,
   defaultFollowUpIntervalMinutes: 30,
 };
 
@@ -35,6 +35,7 @@ export function createEmptyState(): AppState {
     focusSessions: [],
     trades: [],
     activity: [],
+    notifications: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
@@ -113,6 +114,7 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
       keyInsights: '',
       actionItems: '',
       references: '',
+      imageUrls: [] as string[],
       category: 'learning' as const,
       tags: l.tags,
       linkedProjectIds: l.projectId ? [l.projectId] : [],
@@ -131,6 +133,7 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
       keyInsights: '',
       actionItems: '',
       references: '',
+      imageUrls: [] as string[],
       category: 'journal' as const,
       tags: [d.mood],
       linkedProjectIds: d.projectId ? [d.projectId] : [],
@@ -181,6 +184,14 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     googleEventId: t.googleEventId ?? null,
     followUpIntervalMinutes: t.followUpIntervalMinutes ?? null,
   }));
+  const notes = (parsed.notes ?? []).map(n => ({
+    ...n,
+    imageUrls: n.imageUrls ?? [],
+    summary: n.summary ?? '',
+    keyInsights: n.keyInsights ?? '',
+    actionItems: n.actionItems ?? '',
+    references: n.references ?? '',
+  }));
   return {
     areas,
     projects: normalizeProjects(parsed.projects, areas),
@@ -189,7 +200,7 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     goals: parsed.goals ?? [],
     habits: parsed.habits ?? [],
     habitCompletions: parsed.habitCompletions ?? [],
-    notes: parsed.notes ?? [],
+    notes,
     reminders: parsed.reminders ?? [],
     waitingFor: parsed.waitingFor ?? [],
     receivables: parsed.receivables ?? [],
@@ -201,7 +212,8 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     focusSessions: parsed.focusSessions ?? [],
     trades: parsed.trades ?? [],
     activity: parsed.activity ?? [],
-    settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
+    notifications: parsed.notifications ?? [],
+    settings: { ...DEFAULT_SETTINGS, ...parsed.settings, googleCalendarSyncEnabled: false },
   };
 }
 

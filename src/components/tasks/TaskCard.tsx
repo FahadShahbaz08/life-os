@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Edit2, Trash2, Calendar, ChevronDown, ChevronUp, CheckCircle2, Circle, Clock, Star } from 'lucide-react';
 import { Task } from '@/types';
-import { PriorityBadge, TaskStatusBadge, FocusQueueBadge } from '@/components/ui/Badge';
+import { PriorityBadge, TaskStatusBadge } from '@/components/ui/Badge';
 import { formatDate, isOverdue, isDueToday, formatDueTime } from '@/lib/utils';
 
 interface Props {
@@ -25,7 +25,7 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusToggle, onTog
   if (compact) {
     return (
       <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border border-base ${done ? 'opacity-60' : ''}`}>
-        <button onClick={onStatusToggle} className={`shrink-0 ${done ? 'text-emerald-500' : 'text-muted hover:text-secondary'}`}>
+        <button onClick={onStatusToggle} className={`shrink-0 ${done ? 'text-emerald-500' : 'text-muted hover:text-accent'}`}>
           <StatusIcon size={16} />
         </button>
         <span className={`flex-1 text-sm truncate ${done ? 'line-through text-muted' : 'text-primary'}`}>{task.title}</span>
@@ -37,11 +37,11 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusToggle, onTog
 
   return (
     <div className={`bg-surface rounded-xl border transition-all ${
-      done ? 'border-base opacity-60' : overdue ? 'border-red-500/30 bg-red-500/5' : 'border-base hover:border-indigo-500/30'
+      done ? 'border-base opacity-60' : overdue ? 'border-red-500/30 bg-red-500/5' : 'border-base hover:border-accent'
     }`}>
       <div className="px-4 py-3">
         <div className="flex items-start gap-3">
-          <button onClick={onStatusToggle} className={`mt-0.5 shrink-0 ${done ? 'text-emerald-500' : task.status === 'in_progress' ? 'text-indigo-400' : 'text-muted hover:text-secondary'}`}>
+          <button onClick={onStatusToggle} className={`mt-0.5 shrink-0 ${done ? 'text-emerald-500' : task.status === 'in_progress' ? 'text-accent' : 'text-muted hover:text-secondary'}`}>
             <StatusIcon size={17} />
           </button>
           <div className="flex-1 min-w-0">
@@ -53,7 +53,6 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusToggle, onTog
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <PriorityBadge priority={task.priority} />
               <TaskStatusBadge status={task.status} />
-              {task.focusQueue && <FocusQueueBadge queue={task.focusQueue} />}
               {task.dueDate && (
                 <span className={`inline-flex items-center gap-1 text-xs ${overdue ? 'text-red-400 font-medium' : dueToday ? 'text-amber-400 font-medium' : 'text-muted'}`}>
                   <Calendar size={10} />
@@ -79,7 +78,7 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusToggle, onTog
                 {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
             )}
-            <button onClick={onEdit} className="p-1.5 text-muted hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg"><Edit2 size={13} /></button>
+            <button onClick={onEdit} className="p-1.5 text-muted hover:text-accent hover:bg-accent-subtle rounded-lg"><Edit2 size={13} /></button>
             <button onClick={onDelete} className="p-1.5 text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 size={13} /></button>
           </div>
         </div>

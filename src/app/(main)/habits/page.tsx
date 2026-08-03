@@ -1,2 +1,2 @@
-import HabitsPage from '@/components/habits/HabitsPage';
-export default function Page() { return <HabitsPage />; }
+import { redirect } from 'next/navigation';
+export default function Page() { redirect('/'); }

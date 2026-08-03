@@ -7,14 +7,14 @@ import {
 } from '@/lib/notifications';
 
 export default function NotificationManager() {
-  const { state, hydrated, updateSettings } = useApp();
+  const { state, hydrated, updateSettings, pushNotification } = useApp();
 
   useEffect(() => {
     registerServiceWorker();
   }, []);
 
   useEffect(() => {
-    if (!hydrated || !state.settings.notificationsEnabled) return;
+    if (!hydrated) return;
 
     const check = () => {
       const notified = state.settings.notifiedReminderIds ?? [];
@@ -23,7 +23,17 @@ export default function NotificationManager() {
 
       const newIds = [...notified];
       items.forEach(item => {
-        showNotification(item.title, item.body, item.id);
+        // Always feed the in-app notification center
+        pushNotification({
+          id: item.id,
+          title: item.title,
+          body: item.body,
+          type: item.type,
+          href: item.href,
+        });
+        if (state.settings.notificationsEnabled) {
+          showNotification(item.title, item.body, item.id);
+        }
         if (!newIds.includes(item.id)) newIds.push(item.id);
       });
       if (newIds.length > notified.length) {
@@ -34,7 +44,7 @@ export default function NotificationManager() {
     check();
     const interval = setInterval(check, 60_000);
     return () => clearInterval(interval);
-  }, [hydrated, state, updateSettings]);
+  }, [hydrated, state, updateSettings, pushNotification]);
 
   return null;
 }

@@ -11,10 +11,17 @@ export default auth((req) => {
   const isPublic =
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password') ||
     pathname.startsWith('/api/auth');
 
   if (isPublic) {
-    if (isLoggedIn && (pathname.startsWith('/login') || pathname.startsWith('/register'))) {
+    if (isLoggedIn && (
+      pathname.startsWith('/login') ||
+      pathname.startsWith('/register') ||
+      pathname.startsWith('/forgot-password') ||
+      pathname.startsWith('/reset-password')
+    )) {
       return NextResponse.redirect(new URL('/', req.url));
     }
     return NextResponse.next();

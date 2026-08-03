@@ -131,6 +131,7 @@ export interface Note {
   keyInsights: string;
   actionItems: string;
   references: string;
+  imageUrls: string[];
   category: NoteCategory;
   tags: string[];
   linkedProjectIds: string[];
@@ -139,6 +140,16 @@ export interface Note {
   isPinned: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: 'task' | 'finance' | 'system' | 'info';
+  href?: string;
+  read: boolean;
+  createdAt: string;
 }
 
 export interface Reminder {
@@ -302,6 +313,7 @@ export interface AppState {
   focusSessions: FocusSession[];
   trades: Trade[];
   activity: ActivityEntry[];
+  notifications: AppNotification[];
   settings: AppSettings;
 }
 
@@ -342,6 +354,8 @@ export interface TodayDashboard {
     totalPayables: number;
     monthlyExpenses: number;
     upcomingPayables: FinancePayable[];
+    totalReceivables: number;
+    netWorth: number;
   };
   goalProgress: Goal[];
 }

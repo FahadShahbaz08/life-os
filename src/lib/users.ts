@@ -1,5 +1,6 @@
 import { ObjectId, type WithoutId } from 'mongodb';
 import { getDb } from '@/lib/mongodb';
+import { hashResetToken } from '@/lib/password-reset';
 import type { AppState } from '@/types';
 
 const COLLECTION = 'users';
@@ -11,6 +12,8 @@ export interface UserDoc {
   name: string;
   data: AppState;
   googleRefreshToken?: string | null;
+  passwordResetTokenHash?: string | null;
+  passwordResetExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,5 +102,34 @@ export async function clearGoogleRefreshToken(userId: string): Promise<void> {
   await col.updateOne(
     { _id: new ObjectId(userId) },
     { $set: { googleRefreshToken: null, updatedAt: new Date() } }
+  );
+}
+
+export async function setPasswordReset(email: string, tokenHash: string, expires: Date): Promise<boolean> {
+  const col = await getUsersCollection();
+  const result = await col.updateOne(
+    { email },
+    { $set: { passwordResetTokenHash: tokenHash, passwordResetExpires: expires, updatedAt: new Date() } }
+  );
+  return result.matchedCount > 0;
+}
+
+export async function findUserByResetToken(token: string): Promise<UserDoc | null> {
+  const col = await getUsersCollection();
+  return col.findOne({
+    passwordResetTokenHash: hashResetToken(token),
+    passwordResetExpires: { $gt: new Date() },
+  });
+}
+
+export async function updatePassword(userId: string, passwordHash: string): Promise<void> {
+  if (!ObjectId.isValid(userId)) throw new Error('Invalid user id');
+  const col = await getUsersCollection();
+  await col.updateOne(
+    { _id: new ObjectId(userId) },
+    {
+      $set: { passwordHash, updatedAt: new Date() },
+      $unset: { passwordResetTokenHash: '', passwordResetExpires: '' },
+    }
   );
 }

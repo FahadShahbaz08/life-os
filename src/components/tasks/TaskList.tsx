@@ -19,6 +19,7 @@ export default function TaskList({ project }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingComplete, setPendingComplete] = useState<Task | null>(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
@@ -38,13 +39,22 @@ export default function TaskList({ project }: Props) {
   const todoCount = projectTasks.filter(t => t.status === 'todo').length;
   const activeCount = projectTasks.filter(t => t.status === 'in_progress').length;
   const doneCount = projectTasks.filter(t => t.status === 'completed').length;
-  const sel = 'px-3 py-1.5 text-xs bg-surface border border-base rounded-lg text-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  const sel = 'px-3 py-1.5 text-xs bg-surface border border-base rounded-lg text-secondary focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/35';
 
   const saveTask = (data: Parameters<typeof taskFormToEntity>[0]) => {
     const entity = { ...taskFormToEntity(data), areaId: data.areaId ?? project.areaId, projectId: project.id };
     addTask(entity);
     setShowForm(false);
     toast('Task added');
+  };
+
+  const handleStatusToggle = (task: Task) => {
+    if (task.status === 'completed') {
+      updateTask(task.id, { status: 'todo' });
+      toast('Task reopened');
+      return;
+    }
+    setPendingComplete(task);
   };
 
   return (
@@ -55,11 +65,11 @@ export default function TaskList({ project }: Props) {
             Tasks
             <span className="ml-2 text-xs font-normal text-muted">{todoCount} todo · {activeCount} active · {doneCount} done</span>
           </h3>
-          <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-lg ${showFilters ? 'bg-indigo-500/10 text-indigo-400' : 'text-muted hover:bg-raised'}`}>
+          <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-lg ${showFilters ? 'bg-accent-subtle text-accent' : 'text-muted hover:bg-raised'}`}>
             <SlidersHorizontal size={13} />
           </button>
         </div>
-        <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl">
+        <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl">
           <Plus size={12} />Add Task
         </button>
       </div>
@@ -79,7 +89,7 @@ export default function TaskList({ project }: Props) {
 
       {sorted.length === 0 ? (
         <EmptyState icon={ListTodo} title={projectTasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
-          action={projectTasks.length === 0 ? <button onClick={() => setShowForm(true)} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl">Add first task</button> : undefined}
+          action={projectTasks.length === 0 ? <button onClick={() => setShowForm(true)} className="px-4 py-2 text-sm font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl">Add first task</button> : undefined}
         />
       ) : (
         <div className="space-y-2">
@@ -88,11 +98,7 @@ export default function TaskList({ project }: Props) {
               onEdit={() => setEditingTask(task)}
               onDelete={() => setDeletingId(task.id)}
               onToggleTopPriority={() => toggleTopPriority(task.id)}
-              onStatusToggle={() => {
-                const next: TaskStatus = task.status === 'completed' ? 'todo' : 'completed';
-                updateTask(task.id, { status: next });
-                toast(next === 'completed' ? 'Task completed' : 'Task reopened');
-              }}
+              onStatusToggle={() => handleStatusToggle(task)}
             />
           ))}
         </div>
@@ -106,6 +112,21 @@ export default function TaskList({ project }: Props) {
         />
       )}
       {deletingId && <ConfirmDialog title="Delete task?" message="This will permanently remove the task." onConfirm={() => { deleteTask(deletingId); setDeletingId(null); toast('Task deleted', 'info'); }} onCancel={() => setDeletingId(null)} />}
+      {pendingComplete && (
+        <ConfirmDialog
+          title="Mark task complete?"
+          message={`Confirm you finished “${pendingComplete.title}”.`}
+          confirmLabel="Yes, complete"
+          cancelLabel="Not yet"
+          variant="success"
+          onConfirm={() => {
+            updateTask(pendingComplete.id, { status: 'completed' });
+            toast('Task completed');
+            setPendingComplete(null);
+          }}
+          onCancel={() => setPendingComplete(null)}
+        />
+      )}
     </div>
   );
 }

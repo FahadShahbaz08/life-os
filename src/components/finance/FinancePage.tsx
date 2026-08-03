@@ -1,107 +1,177 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Trash2, ArrowDownLeft, ArrowUpRight, Receipt, TrendingUp } from 'lucide-react';
-import { ExpenseCategory, FinancePayableStatus, IncomeSource } from '@/types';
+import { useMemo, useState } from 'react';
+import {
+  Plus, Trash2, ArrowDownLeft, ArrowUpRight, TrendingUp, HandCoins, Landmark,
+  Edit2, Filter, CheckCircle2,
+} from 'lucide-react';
+import {
+  ExpenseCategory, FinancePayableStatus, FinanceReceivableStatus, IncomeSource,
+  FinanceExpense, FinanceIncome, FinancePayable, FinanceReceivable,
+} from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
 import PageHeader from '@/components/ui/PageHeader';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { FORM_INPUT, FORM_SELECT, BTN_PRIMARY, EXPENSE_CATEGORIES, INCOME_SOURCES, DEFAULT_CURRENCY } from '@/lib/constants';
 import { BarChart, DonutChart } from '@/components/ui/Charts';
-import { computeMonthlyExpenses, computeExpensesByCategory, computeMonthlyCashflow } from '@/lib/chart-data';
+import { computeExpensesByCategory, computeMonthlyCashflow } from '@/lib/chart-data';
 import { formatCurrency, formatDate, todayISO } from '@/lib/utils';
 
-export default function FinancePage() {
-  const { state, addPayable, addExpense, addIncome, updatePayable, deletePayable, deleteExpense, deleteIncome } = useApp();
-  const { toast } = useToastContext();
-  const [tab, setTab] = useState<'overview' | 'income' | 'payables' | 'expenses'>('overview');
-  const [modal, setModal] = useState<'income' | 'payable' | 'expense' | null>(null);
+type Tab = 'overview' | 'income' | 'expenses' | 'payables' | 'receivables';
 
-  const monthKey = todayISO().slice(0, 7);
-  const monthIncome = (state.incomes ?? []).filter(i => i.date.startsWith(monthKey)).reduce((s, i) => s + i.amount, 0);
-  const monthExpenses = state.expenses.filter(e => e.date.startsWith(monthKey)).reduce((s, e) => s + e.amount, 0);
-  const totalPayables = state.payables.filter(p => p.status !== 'paid').reduce((s, p) => s + p.amount, 0);
-  const upcomingPayables = state.payables.filter(p => p.status === 'pending' && p.dueDate).sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? '')).slice(0, 5);
+export default function FinancePage() {
+  const {
+    state, addPayable, addReceivable, addExpense, addIncome,
+    updatePayable, updateReceivable, updateExpense, updateIncome,
+    deletePayable, deleteReceivable, deleteExpense, deleteIncome,
+  } = useApp();
+  const { toast } = useToastContext();
+  const [tab, setTab] = useState<Tab>('overview');
+  const [modal, setModal] = useState<'income' | 'payable' | 'expense' | 'receivable' | null>(null);
+  const [editingIncome, setEditingIncome] = useState<FinanceIncome | null>(null);
+  const [editingExpense, setEditingExpense] = useState<FinanceExpense | null>(null);
+  const [editingPayable, setEditingPayable] = useState<FinancePayable | null>(null);
+  const [editingReceivable, setEditingReceivable] = useState<FinanceReceivable | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: string; id: string } | null>(null);
+  const [month, setMonth] = useState(todayISO().slice(0, 7));
+  const [expenseFilter, setExpenseFilter] = useState<string>('all');
+
+  const monthIncome = useMemo(
+    () => (state.incomes ?? []).filter(i => i.date.startsWith(month)).reduce((s, i) => s + i.amount, 0),
+    [state.incomes, month]
+  );
+  const monthExpenses = useMemo(
+    () => state.expenses.filter(e => e.date.startsWith(month)).reduce((s, e) => s + e.amount, 0),
+    [state.expenses, month]
+  );
+  const openPayables = state.payables.filter(p => p.status !== 'paid');
+  const openReceivables = state.receivables.filter(r => r.status !== 'collected' && r.status !== 'written_off');
+  const totalPayables = openPayables.reduce((s, p) => s + p.amount, 0);
+  const totalReceivables = openReceivables.reduce((s, r) => s + r.amount, 0);
+  const net = monthIncome - monthExpenses;
+  const savingsRate = monthIncome > 0 ? Math.round((net / monthIncome) * 100) : 0;
+  const burnRate = monthExpenses;
+  const runway = monthExpenses > 0 && net < 0 ? null : monthExpenses > 0 ? Math.round(Math.max(net, 0) / (monthExpenses / 30)) : null;
+
+  const upcomingPayables = openPayables
+    .filter(p => p.dueDate)
+    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+    .slice(0, 5);
 
   const monthlyChart = computeMonthlyCashflow(state.incomes ?? [], state.expenses);
-  const categoryChart = computeExpensesByCategory(state.expenses);
-  const expenseBar = computeMonthlyExpenses(state.expenses);
+  const monthOnlyExpenses = state.expenses.filter(e => e.date.startsWith(month));
+  const categoryChart = computeExpensesByCategory(monthOnlyExpenses.length ? monthOnlyExpenses : state.expenses);
 
-  const tabs = [
-    { id: 'overview' as const, label: 'Overview' },
-    { id: 'income' as const, label: 'Income' },
-    { id: 'payables' as const, label: 'Payables' },
-    { id: 'expenses' as const, label: 'Expenses' },
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'income', label: 'Income' },
+    { id: 'expenses', label: 'Expenses' },
+    { id: 'payables', label: 'Payables' },
+    { id: 'receivables', label: 'Receivables' },
   ];
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    const { type, id } = deleteTarget;
+    if (type === 'income') deleteIncome(id);
+    if (type === 'expense') deleteExpense(id);
+    if (type === 'payable') deletePayable(id);
+    if (type === 'receivable') deleteReceivable(id);
+    toast('Deleted', 'info');
+    setDeleteTarget(null);
+  };
+
+  const filteredExpenses = state.expenses
+    .filter(e => e.date.startsWith(month))
+    .filter(e => expenseFilter === 'all' || e.category === expenseFilter)
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <>
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-8">
-        <PageHeader title="Finance" subtitle="Monthly income, expenses, and payables"
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-8">
+        <PageHeader
+          title="Finance"
+          subtitle="Cashflow, ledger, payables & receivables"
           action={
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setModal('income')} className="px-3 py-1.5 text-xs text-emerald-400 bg-emerald-500/10 rounded-xl">+ Income</button>
-              <button onClick={() => setModal('payable')} className="px-3 py-1.5 text-xs text-amber-400 bg-amber-500/10 rounded-xl">+ Payable</button>
-              <button onClick={() => setModal('expense')} className={BTN_PRIMARY}><Plus size={14} />Expense</button>
+            <div className="flex gap-2 flex-wrap items-center">
+              <input
+                type="month"
+                value={month}
+                onChange={e => setMonth(e.target.value)}
+                className="px-3 py-1.5 text-xs bg-raised border border-base rounded-xl text-primary"
+              />
+              <button onClick={() => setModal('income')} className="px-3 py-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">+ Income</button>
+              <button onClick={() => setModal('expense')} className="px-3 py-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl">+ Expense</button>
+              <button onClick={() => setModal('payable')} className="px-3 py-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl">+ Payable</button>
+              <button onClick={() => setModal('receivable')} className={BTN_PRIMARY}><Plus size={14} />Receivable</button>
             </div>
           }
         />
 
         <div className="flex gap-1 p-1 bg-raised rounded-xl border border-base mb-6 overflow-x-auto">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 min-w-[70px] py-2 text-xs font-medium rounded-lg whitespace-nowrap ${tab === t.id ? 'bg-surface text-primary shadow-sm' : 'text-muted'}`}>{t.label}</button>
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 min-w-[70px] py-2 text-xs font-medium rounded-lg whitespace-nowrap ${
+                tab === t.id ? 'bg-surface text-primary shadow-sm border border-base' : 'text-muted'
+              }`}
+            >
+              {t.label}
+            </button>
           ))}
         </div>
 
         {tab === 'overview' && (
           <>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-surface border border-base rounded-2xl p-5">
-                <ArrowDownLeft size={16} className="text-emerald-400 mb-2" />
-                <p className="text-2xl font-bold text-emerald-400">{formatCurrency(monthIncome)}</p>
-                <p className="text-xs text-muted">Income this month</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <StatCard icon={<ArrowDownLeft size={16} className="text-emerald-400" />} label="Income" value={formatCurrency(monthIncome)} valueClass="text-emerald-400" />
+              <StatCard icon={<ArrowUpRight size={16} className="text-red-400" />} label="Expenses" value={formatCurrency(monthExpenses)} valueClass="text-red-400" />
+              <StatCard icon={<TrendingUp size={16} className="text-accent" />} label="Net cashflow" value={formatCurrency(net)} valueClass={net >= 0 ? 'text-emerald-400' : 'text-red-400'} hint={`${savingsRate}% savings rate`} />
+              <StatCard icon={<Landmark size={16} className="text-cyan-400" />} label="Burn / mo" value={formatCurrency(burnRate)} valueClass="text-primary" hint={runway !== null ? `~${runway}d surplus runway` : 'Watch spending'} />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+              <div className="card p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted">Open payables (you owe)</p>
+                  <p className="text-xl font-bold text-amber-400 font-display">{formatCurrency(totalPayables)}</p>
+                  <p className="text-[11px] text-muted mt-0.5">{openPayables.length} open</p>
+                </div>
+                <HandCoins size={22} className="text-amber-400/60" />
               </div>
-              <div className="bg-surface border border-base rounded-2xl p-5">
-                <ArrowUpRight size={16} className="text-red-400 mb-2" />
-                <p className="text-2xl font-bold text-red-400">{formatCurrency(monthExpenses)}</p>
-                <p className="text-xs text-muted">Expenses this month</p>
-              </div>
-              <div className="bg-surface border border-base rounded-2xl p-5">
-                <TrendingUp size={16} className="text-indigo-400 mb-2" />
-                <p className={`text-2xl font-bold ${monthIncome - monthExpenses >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {formatCurrency(monthIncome - monthExpenses)}
-                </p>
-                <p className="text-xs text-muted">Net this month</p>
+              <div className="card p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted">Open receivables (owed to you)</p>
+                  <p className="text-xl font-bold text-cyan-400 font-display">{formatCurrency(totalReceivables)}</p>
+                  <p className="text-[11px] text-muted mt-0.5">{openReceivables.length} open</p>
+                </div>
+                <ArrowDownLeft size={22} className="text-cyan-400/60" />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              <div className="bg-surface border border-base rounded-2xl p-5">
-                <h3 className="text-sm font-semibold text-primary mb-1">Monthly Cashflow</h3>
-                <p className="text-xs text-muted mb-4">Income vs expenses · last 6 months</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold font-display text-primary mb-1">Monthly cashflow</h3>
+                <p className="text-xs text-muted mb-4">Net income − expenses · last months</p>
                 <BarChart data={monthlyChart.map(m => ({ label: m.label, value: m.net }))} height={160} />
               </div>
-              <div className="bg-surface border border-base rounded-2xl p-5">
-                <h3 className="text-sm font-semibold text-primary mb-1">Spending by Category</h3>
-                <p className="text-xs text-muted mb-4">All time expenses</p>
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold font-display text-primary mb-1">Spending by category</h3>
+                <p className="text-xs text-muted mb-4">{monthOnlyExpenses.length ? 'This month' : 'All time (no spend in selection)'}</p>
                 <DonutChart segments={categoryChart.map(c => ({ label: c.label, value: c.value }))} />
               </div>
             </div>
 
-            <div className="bg-surface border border-base rounded-2xl p-5 mb-6">
-              <h3 className="text-sm font-semibold text-primary mb-1">Monthly Expenses</h3>
-              <p className="text-xs text-muted mb-4">Expense trend · payables owed: {formatCurrency(totalPayables)}</p>
-              <BarChart data={expenseBar} height={120} />
-            </div>
-
             {upcomingPayables.length > 0 && (
-              <div className="bg-surface border border-base rounded-2xl p-5">
-                <h3 className="text-sm font-semibold text-primary mb-3">Upcoming Payments</h3>
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold font-display text-primary mb-3">Upcoming payments</h3>
                 {upcomingPayables.map(p => (
-                  <div key={p.id} className="flex justify-between py-2 border-b border-subtle last:border-0 text-sm">
-                    <span className="text-secondary">{p.person} — {p.notes || 'Payment'}</span>
-                    <span className="text-red-400 font-medium">{formatCurrency(p.amount)} · {formatDate(p.dueDate)}</span>
+                  <div key={p.id} className="flex justify-between py-2 border-b border-subtle last:border-0 text-sm gap-3">
+                    <span className="text-secondary truncate">{p.person}{p.notes ? ` — ${p.notes}` : ''}</span>
+                    <span className="text-red-400 font-medium shrink-0">{formatCurrency(p.amount)} · {formatDate(p.dueDate)}</span>
                   </div>
                 ))}
               </div>
@@ -110,42 +180,100 @@ export default function FinancePage() {
         )}
 
         {tab === 'income' && (
+          <LedgerList
+            empty="No income logged for this period."
+            items={(state.incomes ?? [])
+              .filter(i => i.date.startsWith(month))
+              .sort((a, b) => b.date.localeCompare(a.date))
+              .map(i => ({
+                id: i.id,
+                title: i.description || i.source,
+                meta: `${i.source} · ${formatDate(i.date)}`,
+                amount: i.amount,
+                amountClass: 'text-emerald-400',
+                status: undefined,
+              }))}
+            onEdit={id => setEditingIncome(state.incomes.find(i => i.id === id) ?? null)}
+            onDelete={id => setDeleteTarget({ type: 'income', id })}
+          />
+        )}
+
+        {tab === 'expenses' && (
+          <>
+            <div className="flex items-center gap-2 mb-3">
+              <Filter size={13} className="text-muted" />
+              <select value={expenseFilter} onChange={e => setExpenseFilter(e.target.value)} className={`${FORM_SELECT} max-w-xs`}>
+                <option value="all">All categories</option>
+                {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <LedgerList
+              empty="No expenses for this month."
+              items={filteredExpenses.map(e => ({
+                id: e.id,
+                title: e.description || e.category,
+                meta: `${e.category} · ${formatDate(e.date)}`,
+                amount: e.amount,
+                amountClass: 'text-primary',
+              }))}
+              onEdit={id => setEditingExpense(state.expenses.find(e => e.id === id) ?? null)}
+              onDelete={id => setDeleteTarget({ type: 'expense', id })}
+            />
+          </>
+        )}
+
+        {tab === 'payables' && (
           <div className="space-y-2">
-            {(state.incomes ?? []).length === 0 ? (
-              <p className="text-sm text-muted text-center py-8">No income logged yet.</p>
-            ) : (state.incomes ?? []).map(i => (
-              <div key={i.id} className="bg-surface border border-base rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-primary">{i.description || i.source}</p>
-                  <p className="text-xs text-muted">{i.source} · {formatDate(i.date)}</p>
+            {state.payables.length === 0 ? (
+              <p className="text-sm text-muted text-center py-8">No payables yet — track money you owe.</p>
+            ) : state.payables.map(p => (
+              <div key={p.id} className="card p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-primary truncate">{p.person}</p>
+                  <p className="text-xs text-muted">{p.notes || 'Payment'}{p.dueDate ? ` · due ${formatDate(p.dueDate)}` : ''}</p>
+                  <StatusPill status={p.status} />
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-emerald-400">{formatCurrency(i.amount)}</span>
-                  <button onClick={() => deleteIncome(i.id)} className="text-muted hover:text-red-400"><Trash2 size={14} /></button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-sm font-bold text-amber-400">{formatCurrency(p.amount)}</span>
+                  {p.status !== 'paid' && (
+                    <>
+                      {p.status === 'pending' && (
+                        <button onClick={() => { updatePayable(p.id, { status: 'partial' }); toast('Marked partial'); }} className="px-2 py-1 text-[10px] bg-raised border border-base rounded-lg text-secondary">Partial</button>
+                      )}
+                      <button onClick={() => { updatePayable(p.id, { status: 'paid' }); toast('Marked paid'); }} className="px-2 py-1 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-lg inline-flex items-center gap-1"><CheckCircle2 size={10} />Paid</button>
+                    </>
+                  )}
+                  <button onClick={() => setEditingPayable(p)} className="p-1.5 text-muted hover:text-accent"><Edit2 size={13} /></button>
+                  <button onClick={() => setDeleteTarget({ type: 'payable', id: p.id })} className="p-1.5 text-muted hover:text-red-400"><Trash2 size={13} /></button>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {tab === 'payables' && (
-          <FinanceList items={state.payables.map(p => ({ id: p.id, primary: p.person, secondary: p.notes, amount: p.amount, date: p.dueDate, status: p.status }))}
-            onMark={(id) => { updatePayable(id, { status: 'paid' as FinancePayableStatus }); toast('Marked paid'); }}
-            onDelete={(id) => deletePayable(id)} color="red"
-          />
-        )}
-
-        {tab === 'expenses' && (
+        {tab === 'receivables' && (
           <div className="space-y-2">
-            {state.expenses.map(e => (
-              <div key={e.id} className="bg-surface border border-base rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-primary">{e.description || e.category}</p>
-                  <p className="text-xs text-muted">{e.category} · {formatDate(e.date)}</p>
+            {state.receivables.length === 0 ? (
+              <p className="text-sm text-muted text-center py-8">No receivables — track money others owe you.</p>
+            ) : state.receivables.map(r => (
+              <div key={r.id} className="card p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-primary truncate">{r.person}</p>
+                  <p className="text-xs text-muted">{r.notes || 'Receivable'}{r.dueDate ? ` · due ${formatDate(r.dueDate)}` : ''}</p>
+                  <StatusPill status={r.status} />
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-primary">{formatCurrency(e.amount)}</span>
-                  <button onClick={() => deleteExpense(e.id)} className="text-muted hover:text-red-400"><Trash2 size={14} /></button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-sm font-bold text-cyan-400">{formatCurrency(r.amount)}</span>
+                  {r.status !== 'collected' && r.status !== 'written_off' && (
+                    <>
+                      {r.status === 'pending' && (
+                        <button onClick={() => { updateReceivable(r.id, { status: 'partial' }); toast('Marked partial'); }} className="px-2 py-1 text-[10px] bg-raised border border-base rounded-lg text-secondary">Partial</button>
+                      )}
+                      <button onClick={() => { updateReceivable(r.id, { status: 'collected' }); toast('Collected'); }} className="px-2 py-1 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-lg">Collected</button>
+                    </>
+                  )}
+                  <button onClick={() => setEditingReceivable(r)} className="p-1.5 text-muted hover:text-accent"><Edit2 size={13} /></button>
+                  <button onClick={() => setDeleteTarget({ type: 'receivable', id: r.id })} className="p-1.5 text-muted hover:text-red-400"><Trash2 size={13} /></button>
                 </div>
               </div>
             ))}
@@ -153,34 +281,147 @@ export default function FinancePage() {
         )}
       </div>
 
-      {modal === 'income' && (
-        <IncomeModal onClose={() => setModal(null)} onSave={d => { addIncome(d); toast('Income logged'); setModal(null); }} />
+      {(modal === 'income' || editingIncome) && (
+        <IncomeModal
+          initial={editingIncome}
+          onClose={() => { setModal(null); setEditingIncome(null); }}
+          onSave={d => {
+            if (editingIncome) {
+              updateIncome(editingIncome.id, d);
+              toast('Income updated');
+            } else {
+              addIncome(d);
+              toast('Income logged');
+            }
+            setModal(null);
+            setEditingIncome(null);
+          }}
+        />
       )}
-      {modal === 'payable' && (
-        <FinanceModal title="Add Payable" onClose={() => setModal(null)} onSave={d => { addPayable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending' }); toast('Added'); setModal(null); }} />
+      {(modal === 'expense' || editingExpense) && (
+        <ExpenseModal
+          initial={editingExpense}
+          onClose={() => { setModal(null); setEditingExpense(null); }}
+          onSave={d => {
+            if (editingExpense) {
+              updateExpense(editingExpense.id, d);
+              toast('Expense updated');
+            } else {
+              addExpense(d);
+              toast('Expense logged');
+            }
+            setModal(null);
+            setEditingExpense(null);
+          }}
+        />
       )}
-      {modal === 'expense' && (
-        <ExpenseModal onClose={() => setModal(null)} onSave={d => { addExpense(d); toast('Expense logged'); setModal(null); }} />
+      {(modal === 'payable' || editingPayable) && (
+        <PartyModal
+          title={editingPayable ? 'Edit Payable' : 'Add Payable'}
+          initial={editingPayable}
+          onClose={() => { setModal(null); setEditingPayable(null); }}
+          onSave={d => {
+            if (editingPayable) {
+              updatePayable(editingPayable.id, { person: d.person, amount: d.amount, dueDate: d.date, notes: d.notes, status: d.status as FinancePayableStatus });
+              toast('Payable updated');
+            } else {
+              addPayable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending' });
+              toast('Payable added');
+            }
+            setModal(null);
+            setEditingPayable(null);
+          }}
+          statusOptions={[
+            { value: 'pending', label: 'Pending' },
+            { value: 'partial', label: 'Partial' },
+            { value: 'paid', label: 'Paid' },
+          ]}
+        />
+      )}
+      {(modal === 'receivable' || editingReceivable) && (
+        <PartyModal
+          title={editingReceivable ? 'Edit Receivable' : 'Add Receivable'}
+          initial={editingReceivable}
+          onClose={() => { setModal(null); setEditingReceivable(null); }}
+          onSave={d => {
+            if (editingReceivable) {
+              updateReceivable(editingReceivable.id, { person: d.person, amount: d.amount, dueDate: d.date, notes: d.notes, status: d.status as FinanceReceivableStatus });
+              toast('Receivable updated');
+            } else {
+              addReceivable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending' });
+              toast('Receivable added');
+            }
+            setModal(null);
+            setEditingReceivable(null);
+          }}
+          statusOptions={[
+            { value: 'pending', label: 'Pending' },
+            { value: 'partial', label: 'Partial' },
+            { value: 'collected', label: 'Collected' },
+            { value: 'written_off', label: 'Written off' },
+          ]}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete entry?"
+          message="This finance entry will be removed permanently."
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </>
   );
 }
 
-function FinanceList({ items, onMark, onDelete, color }: { items: { id: string; primary: string; secondary: string; amount: number; date: string | null; status: string }[]; onMark: (id: string) => void; onDelete: (id: string) => void; color: string }) {
+function StatCard({ icon, label, value, valueClass, hint }: {
+  icon: React.ReactNode; label: string; value: string; valueClass: string; hint?: string;
+}) {
+  return (
+    <div className="card p-4">
+      <div className="mb-2">{icon}</div>
+      <p className={`text-xl font-bold font-display ${valueClass}`}>{value}</p>
+      <p className="text-xs text-muted">{label}</p>
+      {hint && <p className="text-[10px] text-muted mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    pending: 'bg-amber-500/10 text-amber-400',
+    partial: 'bg-cyan-500/10 text-cyan-400',
+    paid: 'bg-emerald-500/10 text-emerald-400',
+    collected: 'bg-emerald-500/10 text-emerald-400',
+    written_off: 'bg-raised text-muted',
+  };
+  return (
+    <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-md capitalize ${map[status] ?? 'bg-raised text-muted'}`}>
+      {status.replace('_', ' ')}
+    </span>
+  );
+}
+
+function LedgerList({ items, empty, onEdit, onDelete }: {
+  items: { id: string; title: string; meta: string; amount: number; amountClass: string; status?: string }[];
+  empty: string;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (items.length === 0) return <p className="text-sm text-muted text-center py-8">{empty}</p>;
   return (
     <div className="space-y-2">
-      {items.length === 0 ? <p className="text-sm text-muted text-center py-8">No items</p> : items.map(item => (
-        <div key={item.id} className="bg-surface border border-base rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-primary">{item.primary}</p>
-            <p className="text-xs text-muted">{item.secondary}{item.date ? ` · ${formatDate(item.date)}` : ''}</p>
+      {items.map(item => (
+        <div key={item.id} className="card p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-primary truncate">{item.title}</p>
+            <p className="text-xs text-muted">{item.meta}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`text-sm font-bold text-${color}-400`}>{formatCurrency(item.amount)}</span>
-            {item.status !== 'paid' && (
-              <button onClick={() => onMark(item.id)} className="px-2 py-1 text-xs bg-emerald-500/10 text-emerald-400 rounded-lg">Mark done</button>
-            )}
-            <button onClick={() => onDelete(item.id)} className="text-muted hover:text-red-400"><Trash2 size={14} /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`text-sm font-bold ${item.amountClass}`}>{formatCurrency(item.amount)}</span>
+            <button onClick={() => onEdit(item.id)} className="p-1.5 text-muted hover:text-accent"><Edit2 size={13} /></button>
+            <button onClick={() => onDelete(item.id)} className="p-1.5 text-muted hover:text-red-400"><Trash2 size={13} /></button>
           </div>
         </div>
       ))}
@@ -188,79 +429,99 @@ function FinanceList({ items, onMark, onDelete, color }: { items: { id: string; 
   );
 }
 
-function FinanceModal({ title, onClose, onSave }: { title: string; onClose: () => void; onSave: (d: { person: string; amount: number; date: string | null; notes: string }) => void }) {
-  const [person, setPerson] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState('');
-  const [notes, setNotes] = useState('');
+function IncomeModal({ initial, onClose, onSave }: {
+  initial?: FinanceIncome | null;
+  onClose: () => void;
+  onSave: (d: { source: IncomeSource; amount: number; currency: string; date: string; description: string }) => void;
+}) {
+  const [source, setSource] = useState<IncomeSource>(initial?.source ?? 'salary');
+  const [amount, setAmount] = useState(initial?.amount?.toString() ?? '');
+  const [date, setDate] = useState(initial?.date ?? todayISO());
+  const [description, setDescription] = useState(initial?.description ?? '');
   return (
-    <Modal title={title} onClose={onClose}>
-      <form onSubmit={e => { e.preventDefault(); onSave({ person, amount: Number(amount), date: date || null, notes }); }} className="flex flex-col flex-1 overflow-hidden">
-        <ModalBody>
-          <div className="space-y-3">
-            <input value={person} onChange={e => setPerson(e.target.value)} placeholder="Person / Vendor" className={FORM_INPUT} required />
-            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
-            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes" className={FORM_INPUT} />
-          </div>
-        </ModalBody>
-        <ModalFooter>
-          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-xl">Save</button>
-        </ModalFooter>
-      </form>
-    </Modal>
-  );
-}
-
-function IncomeModal({ onClose, onSave }: { onClose: () => void; onSave: (d: { source: IncomeSource; amount: number; currency: string; date: string; description: string }) => void }) {
-  const [source, setSource] = useState<IncomeSource>('salary');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(todayISO());
-  const [description, setDescription] = useState('');
-  return (
-    <Modal title="Log Income" onClose={onClose}>
+    <Modal title={initial ? 'Edit Income' : 'Log Income'} onClose={onClose}>
       <form onSubmit={e => { e.preventDefault(); onSave({ source, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description }); }} className="flex flex-col flex-1 overflow-hidden">
         <ModalBody>
           <div className="space-y-3">
             <select value={source} onChange={e => setSource(e.target.value as IncomeSource)} className={FORM_SELECT}>
               {INCOME_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
-            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
+            <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className={FORM_INPUT} />
           </div>
         </ModalBody>
         <ModalFooter>
           <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-xl">Save</button>
+          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
         </ModalFooter>
       </form>
     </Modal>
   );
 }
 
-function ExpenseModal({ onClose, onSave }: { onClose: () => void; onSave: (d: { category: ExpenseCategory; amount: number; currency: string; date: string; description: string; areaId: string | null }) => void }) {
-  const [category, setCategory] = useState<ExpenseCategory>('food');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(todayISO());
-  const [description, setDescription] = useState('');
+function ExpenseModal({ initial, onClose, onSave }: {
+  initial?: FinanceExpense | null;
+  onClose: () => void;
+  onSave: (d: { category: ExpenseCategory; amount: number; currency: string; date: string; description: string; areaId: string | null }) => void;
+}) {
+  const [category, setCategory] = useState<ExpenseCategory>(initial?.category ?? 'food');
+  const [amount, setAmount] = useState(initial?.amount?.toString() ?? '');
+  const [date, setDate] = useState(initial?.date ?? todayISO());
+  const [description, setDescription] = useState(initial?.description ?? '');
   return (
-    <Modal title="Log Expense" onClose={onClose}>
-      <form onSubmit={e => { e.preventDefault(); onSave({ category, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description, areaId: null }); }} className="flex flex-col flex-1 overflow-hidden">
+    <Modal title={initial ? 'Edit Expense' : 'Log Expense'} onClose={onClose}>
+      <form onSubmit={e => { e.preventDefault(); onSave({ category, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description, areaId: initial?.areaId ?? null }); }} className="flex flex-col flex-1 overflow-hidden">
         <ModalBody>
           <div className="space-y-3">
             <select value={category} onChange={e => setCategory(e.target.value as ExpenseCategory)} className={FORM_SELECT}>
               {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
-            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
+            <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className={FORM_INPUT} />
           </div>
         </ModalBody>
         <ModalFooter>
           <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-xl">Save</button>
+          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
+        </ModalFooter>
+      </form>
+    </Modal>
+  );
+}
+
+function PartyModal({ title, initial, onClose, onSave, statusOptions }: {
+  title: string;
+  initial?: { person: string; amount: number; dueDate: string | null; notes: string; status: string } | null;
+  onClose: () => void;
+  onSave: (d: { person: string; amount: number; date: string | null; notes: string; status: string }) => void;
+  statusOptions: { value: string; label: string }[];
+}) {
+  const [person, setPerson] = useState(initial?.person ?? '');
+  const [amount, setAmount] = useState(initial?.amount?.toString() ?? '');
+  const [date, setDate] = useState(initial?.dueDate ?? '');
+  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [status, setStatus] = useState(initial?.status ?? statusOptions[0].value);
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form onSubmit={e => { e.preventDefault(); onSave({ person, amount: Number(amount), date: date || null, notes, status }); }} className="flex flex-col flex-1 overflow-hidden">
+        <ModalBody>
+          <div className="space-y-3">
+            <input value={person} onChange={e => setPerson(e.target.value)} placeholder="Person / Vendor" className={FORM_INPUT} required />
+            <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
+            {initial && (
+              <select value={status} onChange={e => setStatus(e.target.value)} className={FORM_SELECT}>
+                {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            )}
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes" className={FORM_INPUT} />
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
+          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
         </ModalFooter>
       </form>
     </Modal>

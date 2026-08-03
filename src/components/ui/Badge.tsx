@@ -5,23 +5,23 @@ const base = 'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-m
 
 const PRIORITY_COLORS: Record<Priority, string> = {
   low: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-  medium: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  medium: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
   high: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
   urgent: 'bg-red-500/10 text-red-400 border-red-500/20',
 };
 
 const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = {
   not_started: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-  in_progress: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-  waiting: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  in_progress: 'bg-accent-subtle text-accent border-accent',
+  waiting: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
   completed: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   archived: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
 };
 
 const TASK_STATUS_COLORS: Record<TaskStatus, string> = {
   todo: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-  in_progress: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-  waiting: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  in_progress: 'bg-accent-subtle text-accent border-accent',
+  waiting: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
   completed: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   archived: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
 };

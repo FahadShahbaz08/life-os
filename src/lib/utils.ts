@@ -245,17 +245,8 @@ export function computeDayQueue(state: AppState): DayQueueItem[] {
   };
 
   sortTasksByPriority(active.filter(t => isOverdue(t.dueDate))).forEach(t => addTask(t, 'overdue'));
-  sortTasksByPriority(active.filter(t => t.focusQueue === 'now')).forEach(t => addTask(t, 'focus'));
   sortTasksByPriority(active.filter(t => t.dueDate === now)).forEach(t => addTask(t, 'today'));
   sortTasksByPriority(active.filter(t => t.isTopPriority)).forEach(t => addTask(t, 'priority'));
-
-  state.reminders
-    .filter(r => r.status === 'pending' && r.remindAt.slice(0, 10) <= now)
-    .sort((a, b) => a.remindAt.localeCompare(b.remindAt))
-    .slice(0, 5)
-    .forEach(r => {
-      items.push({ id: `reminder-${r.id}`, kind: 'reminder', reason: 'reminder', reminder: r });
-    });
 
   return items;
 }
@@ -264,14 +255,7 @@ export function computeTodayDashboard(state: AppState): TodayDashboard {
   const now = todayISO();
   const monthKey = now.slice(0, 7);
 
-  const todaysHabits = state.habits
-    .filter(h => h.isActive && (h.frequency === 'daily' || h.frequency === 'weekly'))
-    .map(habit => ({
-      habit,
-      completed: state.habitCompletions.some(
-        c => c.habitId === habit.id && c.completedAt.startsWith(now)
-      ),
-    }));
+  const todaysHabits: TodayDashboard['todaysHabits'] = [];
 
   const monthlyExpenses = state.expenses
     .filter(e => e.date.startsWith(monthKey))
@@ -285,6 +269,10 @@ export function computeTodayDashboard(state: AppState): TodayDashboard {
     .filter(p => p.status === 'pending' || p.status === 'partial')
     .reduce((sum, p) => sum + p.amount, 0);
 
+  const totalReceivables = state.receivables
+    .filter(r => r.status === 'pending' || r.status === 'partial')
+    .reduce((sum, r) => sum + r.amount, 0);
+
   const upcomingPayables = state.payables
     .filter(p => (p.status === 'pending' || p.status === 'partial') && p.dueDate)
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
@@ -293,7 +281,14 @@ export function computeTodayDashboard(state: AppState): TodayDashboard {
   return {
     dayQueue: computeDayQueue(state),
     todaysHabits,
-    financeAlerts: { monthlyIncome, totalPayables, monthlyExpenses, upcomingPayables },
+    financeAlerts: {
+      monthlyIncome,
+      totalPayables,
+      monthlyExpenses,
+      upcomingPayables,
+      totalReceivables,
+      netWorth: monthlyIncome - monthlyExpenses + totalReceivables - totalPayables,
+    },
     goalProgress: state.goals.filter(g => g.status === 'active').slice(0, 4),
   };
 }

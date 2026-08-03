@@ -1,2 +1,2 @@
-import FocusPage from '@/components/focus/FocusPage';
-export default function Page() { return <FocusPage />; }
+import { redirect } from 'next/navigation';
+export default function Page() { redirect('/'); }

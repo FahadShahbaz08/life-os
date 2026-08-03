@@ -75,7 +75,9 @@ export const FOLLOW_UP_INTERVALS: { value: number | null; label: string }[] = [
   { value: 60, label: 'Every 1 hour' },
   { value: 120, label: 'Every 2 hours' },
 ];
-export const FORM_INPUT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-accent';
-export const FORM_SELECT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-accent';
-export const BTN_PRIMARY = 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 rounded-xl transition-colors shadow-sm disabled:opacity-40';
+export const FORM_INPUT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/35 focus:border-accent';
+export const FORM_SELECT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/35 focus:border-accent';
+export const BTN_PRIMARY = 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl transition-colors shadow-sm disabled:opacity-40';
 export const BTN_SECONDARY = 'px-4 py-2 text-sm font-medium text-secondary bg-raised hover:bg-overlay border border-base rounded-xl transition-colors';
+export const BTN_TAB_ACTIVE = 'bg-accent-subtle text-accent border border-accent';
+export const BTN_TAB_IDLE = 'bg-raised text-muted border border-base hover:text-secondary';

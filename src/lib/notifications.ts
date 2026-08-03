@@ -27,6 +27,8 @@ export interface NotificationItem {
   id: string;
   title: string;
   body: string;
+  type: 'task' | 'finance' | 'system' | 'info';
+  href?: string;
 }
 
 function collectTaskNotifications(task: Task, nowMs: number, alreadyNotified: string[]): NotificationItem[] {
@@ -44,6 +46,8 @@ function collectTaskNotifications(task: Task, nowMs: number, alreadyNotified: st
       id: dueKey,
       title: 'Task due now',
       body: `${task.title}${timeLabel}`,
+      type: 'task',
+      href: '/tasks',
     });
   }
 
@@ -57,6 +61,8 @@ function collectTaskNotifications(task: Task, nowMs: number, alreadyNotified: st
           id: followUpKey,
           title: 'Task still pending',
           body: `${task.title} — mark done when complete`,
+          type: 'task',
+          href: '/tasks',
         });
       }
     }
@@ -71,38 +77,62 @@ export function collectDueNotifications(state: AppState, alreadyNotified: string
   const nowMs = now.getTime();
   const today = now.toISOString().split('T')[0];
 
-  state.reminders
-    .filter(r => r.status === 'pending')
-    .forEach(r => {
-      const due = new Date(r.remindAt).getTime();
-      if (due <= nowMs + 60000 && !alreadyNotified.includes(`reminder-${r.id}`)) {
-        items.push({ id: `reminder-${r.id}`, title: 'Reminder', body: r.title });
-      }
-    });
-
   state.tasks.forEach(t => {
     items.push(...collectTaskNotifications(t, nowMs, alreadyNotified));
 
     if (t.status === 'completed' || t.status === 'archived') return;
 
     if (t.dueDate && t.dueDate < today && !alreadyNotified.includes(`overdue-${t.id}`)) {
-      items.push({ id: `overdue-${t.id}`, title: 'Overdue task', body: t.title });
+      items.push({
+        id: `overdue-${t.id}`,
+        title: 'Overdue task',
+        body: t.title,
+        type: 'task',
+        href: '/tasks',
+      });
     }
     if (t.dueDate === today && !t.dueTime && !alreadyNotified.includes(`today-${t.id}`)) {
       const hour = now.getHours();
       if (hour >= 8 && hour <= 9) {
-        items.push({ id: `today-${t.id}`, title: 'Due today', body: t.title });
+        items.push({
+          id: `today-${t.id}`,
+          title: 'Due today',
+          body: t.title,
+          type: 'task',
+          href: '/tasks',
+        });
       }
     }
   });
 
-  state.habits
-    .filter(h => h.isActive && h.frequency === 'daily')
-    .forEach(h => {
-      const done = state.habitCompletions.some(c => c.habitId === h.id && c.completedAt.startsWith(today));
-      const hour = now.getHours();
-      if (!done && hour >= 18 && hour <= 19 && !alreadyNotified.includes(`habit-${h.id}-${today}`)) {
-        items.push({ id: `habit-${h.id}-${today}`, title: 'Habit reminder', body: `Don't forget: ${h.name}` });
+  // Finance alerts
+  state.payables
+    .filter(p => (p.status === 'pending' || p.status === 'partial') && p.dueDate)
+    .forEach(p => {
+      const key = `payable-due-${p.id}-${p.dueDate}`;
+      if (p.dueDate! <= today && !alreadyNotified.includes(key)) {
+        items.push({
+          id: key,
+          title: p.dueDate === today ? 'Payment due today' : 'Payment overdue',
+          body: `${p.person} — ${p.amount}`,
+          type: 'finance',
+          href: '/finance',
+        });
+      }
+    });
+
+  state.receivables
+    .filter(r => (r.status === 'pending' || r.status === 'partial') && r.dueDate)
+    .forEach(r => {
+      const key = `receivable-due-${r.id}-${r.dueDate}`;
+      if (r.dueDate! <= today && !alreadyNotified.includes(key)) {
+        items.push({
+          id: key,
+          title: 'Receivable due',
+          body: `${r.person} owes you`,
+          type: 'finance',
+          href: '/finance',
+        });
       }
     });
 

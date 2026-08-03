@@ -122,12 +122,12 @@ function NoteFromInbox({ item, onClose }: { item: InboxItem; onClose: () => void
           <button onClick={() => {
             processInboxToNote(item.id, {
               areaId: null, title, content: item.content, summary: '', keyInsights: '',
-              actionItems: '', references: '', category: 'ideas', tags: [],
+              actionItems: '', references: '', imageUrls: [], category: 'ideas', tags: [],
               linkedProjectIds: [], linkedGoalIds: [], source: 'inbox', isPinned: false,
             });
             toast('Converted to note');
             onClose();
-          }} className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-xl">Save Note</button>
+          }} className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save Note</button>
         </div>
       </div>
     </div>
