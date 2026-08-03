@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronLeft, ChevronRight, Highlighter, StickyNote, Trash2, Loader2, BookOpen, List,
+  ZoomIn, ZoomOut, Maximize2,
 } from 'lucide-react';
 import type { AnnotationType, BookAnnotation, BookPublic } from '@/lib/books';
 import { getCachedPdf, setCachedPdf } from '@/lib/pdf-local-cache';
@@ -14,6 +15,10 @@ interface Props {
   bookId: string;
 }
 
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.15;
+
 export default function BookReader({ bookId }: Props) {
   const { toast } = useToastContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -21,6 +26,7 @@ export default function BookReader({ bookId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
+  const zoomRef = useRef(1);
 
   const [book, setBook] = useState<BookPublic | null>(null);
   const [page, setPage] = useState(1);
@@ -32,6 +38,11 @@ export default function BookReader({ bookId }: Props) {
   const [noteText, setNoteText] = useState('');
   const [selectedText, setSelectedText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  /** Multiplier over fit-to-width (1 = fill panel width). */
+  const [zoom, setZoom] = useState(1);
+  const [layoutTick, setLayoutTick] = useState(0);
+
+  zoomRef.current = zoom;
 
   const saveProgress = useCallback(async (pageNum: number, total?: number) => {
     try {
@@ -91,7 +102,6 @@ export default function BookReader({ bookId }: Props) {
           const buffer = await pdfRes.arrayBuffer();
           data = new Uint8Array(buffer);
           if (!cancelled) {
-            // Copy for IDB — transferables/mutations can detach the buffer
             await setCachedPdf(cacheMeta, buffer.slice(0));
           }
         }
@@ -122,6 +132,22 @@ export default function BookReader({ bookId }: Props) {
     };
   }, [bookId, toast, saveProgress]);
 
+  // Re-render when viewer size changes
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => setLayoutTick(n => n + 1), 80);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      if (t) clearTimeout(t);
+    };
+  }, [loading, book?.hasPdf]);
+
   const renderPage = useCallback(async (pageNum: number) => {
     const doc = pdfDocRef.current;
     const canvas = canvasRef.current;
@@ -132,15 +158,23 @@ export default function BookReader({ bookId }: Props) {
     setRendering(true);
     try {
       const pdfPage = await doc.getPage(pageNum);
-      const containerWidth = containerRef.current?.clientWidth ?? 720;
+      const box = containerRef.current;
+      // Full width of the reading pane
+      const containerWidth = Math.max(200, box?.clientWidth ?? 720);
       const unscaled = pdfPage.getViewport({ scale: 1 });
-      const scale = Math.min(1.8, Math.max(0.8, (containerWidth - 32) / unscaled.width));
+      const fitScale = (containerWidth - 2) / unscaled.width;
+      const scale = Math.min(ZOOM_MAX * 1.5, Math.max(0.2, fitScale * zoomRef.current));
       const viewport = pdfPage.getViewport({ scale });
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
+
+      const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+      canvas.width = Math.floor(viewport.width * dpr);
+      canvas.height = Math.floor(viewport.height * dpr);
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const task = pdfPage.render({ canvasContext: ctx, viewport });
       renderTaskRef.current = task;
@@ -186,12 +220,16 @@ export default function BookReader({ bookId }: Props) {
 
   useEffect(() => {
     if (numPages > 0 && page >= 1) void renderPage(page);
-  }, [page, numPages, renderPage]);
+  }, [page, numPages, zoom, layoutTick, renderPage]);
 
   const goTo = (p: number) => {
     if (p < 1 || (numPages && p > numPages)) return;
     setPage(p);
     void saveProgress(p, numPages || undefined);
+  };
+
+  const adjustZoom = (delta: number) => {
+    setZoom(z => Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z + delta)) * 100) / 100);
   };
 
   const captureSelection = () => {
@@ -243,7 +281,7 @@ export default function BookReader({ bookId }: Props) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[60vh] text-muted gap-2">
+      <div className="absolute inset-0 flex items-center justify-center text-muted gap-2 bg-base">
         <Loader2 className="animate-spin" size={18} /> {loadHint}
       </div>
     );
@@ -272,21 +310,61 @@ export default function BookReader({ bookId }: Props) {
   const allNotes = [...(book.annotations ?? [])].sort(
     (a, b) => a.page - b.page || a.createdAt.localeCompare(b.createdAt),
   );
+  const zoomLabel = `${Math.round(zoom * 100)}%`;
 
   return (
-    <div className="flex flex-col min-h-0" style={{ height: 'calc(100dvh - 7.5rem)' }}>
-      <header className="shrink-0 border-b border-base bg-surface/80 backdrop-blur-sm px-3 sm:px-4 py-2.5 flex items-center gap-2 flex-wrap">
-        <Link href="/books" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-raised">
+    /* Fill entire main content pane (parent is relative) */
+    <div className="absolute inset-0 flex flex-col min-h-0 bg-base">
+      <header className="shrink-0 border-b border-base bg-surface/90 backdrop-blur-sm px-2 sm:px-3 py-2 flex items-center gap-1.5 sm:gap-2 flex-wrap z-10">
+        <Link href="/books" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-raised shrink-0">
           <ChevronLeft size={18} />
         </Link>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[8rem]">
           <h1 className="text-sm font-semibold font-display text-primary truncate">{book.title}</h1>
           <p className="text-[11px] text-muted">
             Page {page}{numPages ? ` / ${numPages}` : ''}
             {rendering ? ' · rendering…' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-1">
+
+        <div className="flex items-center gap-0.5 sm:gap-1 border border-base rounded-lg p-0.5 bg-raised/40">
+          <button
+            type="button"
+            disabled={zoom <= ZOOM_MIN}
+            onClick={() => adjustZoom(-ZOOM_STEP)}
+            className="p-1.5 rounded-md text-secondary disabled:opacity-30 hover:bg-raised"
+            title="Zoom out"
+          >
+            <ZoomOut size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            className="px-1.5 min-w-[3rem] text-[11px] font-medium text-secondary hover:text-primary tabular-nums"
+            title="Reset to fit width"
+          >
+            {zoomLabel}
+          </button>
+          <button
+            type="button"
+            disabled={zoom >= ZOOM_MAX}
+            onClick={() => adjustZoom(ZOOM_STEP)}
+            className="p-1.5 rounded-md text-secondary disabled:opacity-30 hover:bg-raised"
+            title="Zoom in"
+          >
+            <ZoomIn size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            className="p-1.5 rounded-md text-secondary hover:bg-raised hidden sm:inline-flex"
+            title="Fit width"
+          >
+            <Maximize2 size={14} />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-0.5 sm:gap-1">
           <button type="button" disabled={page <= 1} onClick={() => goTo(page - 1)} className="p-2 rounded-lg border border-base text-secondary disabled:opacity-30 hover:bg-raised">
             <ChevronLeft size={16} />
           </button>
@@ -299,22 +377,25 @@ export default function BookReader({ bookId }: Props) {
               const n = Number(e.target.value);
               if (Number.isFinite(n)) goTo(n);
             }}
-            className="w-14 px-1 py-1.5 text-center text-xs bg-raised border border-base rounded-lg"
+            className="w-12 sm:w-14 px-1 py-1.5 text-center text-xs bg-raised border border-base rounded-lg"
           />
           <button type="button" disabled={!!numPages && page >= numPages} onClick={() => goTo(page + 1)} className="p-2 rounded-lg border border-base text-secondary disabled:opacity-30 hover:bg-raised">
             <ChevronRight size={16} />
           </button>
-          <button type="button" onClick={() => setShowPanel(v => !v)} className="p-2 rounded-lg border border-base text-secondary hover:bg-raised ml-1" title="Notes panel">
+          <button type="button" onClick={() => setShowPanel(v => !v)} className="p-2 rounded-lg border border-base text-secondary hover:bg-raised" title="Notes panel">
             <List size={16} />
           </button>
         </div>
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
-        <div className="flex-1 min-w-0 min-h-0 overflow-auto os-scroll bg-base order-1" ref={containerRef}>
-          <div className="py-4 flex justify-center" onMouseUp={captureSelection}>
-            <div className="relative shadow-sm border border-base bg-white inline-block max-w-full">
-              <canvas ref={canvasRef} className="block max-w-full h-auto" />
+        <div
+          className="flex-1 min-w-0 min-h-0 overflow-auto os-scroll bg-base order-1 sm:order-none"
+          ref={containerRef}
+        >
+          <div className="min-h-full flex justify-center items-start" onMouseUp={captureSelection}>
+            <div className="relative bg-white shadow-sm">
+              <canvas ref={canvasRef} className="block" />
               <div
                 ref={textLayerRef}
                 className="absolute left-0 top-0 overflow-hidden select-text"
@@ -324,8 +405,8 @@ export default function BookReader({ bookId }: Props) {
         </div>
 
         {showPanel && (
-          <aside className="w-full sm:w-80 shrink-0 border-t sm:border-t-0 sm:border-l border-base bg-surface flex flex-col min-h-0 max-h-[42vh] sm:max-h-none">
-            <div className="p-3 border-b border-base">
+          <aside className="w-full sm:w-72 lg:w-80 shrink-0 border-t sm:border-t-0 sm:border-l border-base bg-surface flex flex-col min-h-0 h-[38vh] sm:h-auto sm:max-h-none order-2">
+            <div className="p-3 border-b border-base shrink-0">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">On this page</h2>
               {selectedText && (
                 <p className="text-[11px] text-secondary bg-raised border border-base rounded-lg p-2 mb-2 line-clamp-3">
