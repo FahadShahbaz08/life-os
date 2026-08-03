@@ -6,7 +6,7 @@ import {
   Edit2, Filter, CheckCircle2,
 } from 'lucide-react';
 import {
-  ExpenseCategory, FinancePayableStatus, FinanceReceivableStatus, IncomeSource,
+  FinancePayableStatus, FinanceReceivableStatus, IncomeSource,
   FinanceExpense, FinanceIncome, FinancePayable, FinanceReceivable,
 } from '@/types';
 import { useApp } from '@/context/AppContext';
@@ -14,18 +14,23 @@ import { useToastContext } from '@/context/ToastContext';
 import PageHeader from '@/components/ui/PageHeader';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { FORM_INPUT, FORM_SELECT, BTN_PRIMARY, EXPENSE_CATEGORIES, INCOME_SOURCES, DEFAULT_CURRENCY } from '@/lib/constants';
-import { BarChart, DonutChart } from '@/components/ui/Charts';
+import { FORM_INPUT, FORM_SELECT, BTN_PRIMARY, INCOME_SOURCES, DEFAULT_CURRENCY, DEFAULT_EXPENSE_CATEGORIES } from '@/lib/constants';
+import { CashflowChart, CategoryBars } from '@/components/ui/Charts';
 import { computeExpensesByCategory, computeMonthlyCashflow } from '@/lib/chart-data';
 import { formatCurrency, formatDate, todayISO } from '@/lib/utils';
 
-type Tab = 'overview' | 'income' | 'expenses' | 'payables' | 'receivables';
+type Tab = 'overview' | 'income' | 'expenses' | 'payables' | 'receivables' | 'categories';
+
+function normalizeCategoryLabel(label: string): string {
+  return label.trim().replace(/\s+/g, ' ');
+}
 
 export default function FinancePage() {
   const {
     state, addPayable, addReceivable, addExpense, addIncome,
     updatePayable, updateReceivable, updateExpense, updateIncome,
     deletePayable, deleteReceivable, deleteExpense, deleteIncome,
+    updateSettings,
   } = useApp();
   const { toast } = useToastContext();
   const [tab, setTab] = useState<Tab>('overview');
@@ -37,6 +42,34 @@ export default function FinancePage() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: string; id: string } | null>(null);
   const [month, setMonth] = useState(todayISO().slice(0, 7));
   const [expenseFilter, setExpenseFilter] = useState<string>('all');
+  const [newCategory, setNewCategory] = useState('');
+
+  const categories = state.settings.expenseCategories?.length
+    ? state.settings.expenseCategories
+    : DEFAULT_EXPENSE_CATEGORIES;
+
+  const addCategory = (raw: string) => {
+    const label = normalizeCategoryLabel(raw);
+    if (!label) return;
+    const exists = categories.some(c => c.toLowerCase() === label.toLowerCase());
+    if (exists) {
+      toast('Category already exists', 'info');
+      return;
+    }
+    updateSettings({ expenseCategories: [...categories, label] });
+    toast(`Category “${label}” added`);
+    setNewCategory('');
+  };
+
+  const removeCategory = (label: string) => {
+    const inUse = state.expenses.some(e => e.category.toLowerCase() === label.toLowerCase());
+    if (inUse) {
+      toast('Category is used on expenses — reassign first', 'error');
+      return;
+    }
+    updateSettings({ expenseCategories: categories.filter(c => c.toLowerCase() !== label.toLowerCase()) });
+    toast('Category removed', 'info');
+  };
 
   const monthIncome = useMemo(
     () => (state.incomes ?? []).filter(i => i.date.startsWith(month)).reduce((s, i) => s + i.amount, 0),
@@ -62,7 +95,7 @@ export default function FinancePage() {
 
   const monthlyChart = computeMonthlyCashflow(state.incomes ?? [], state.expenses);
   const monthOnlyExpenses = state.expenses.filter(e => e.date.startsWith(month));
-  const categoryChart = computeExpensesByCategory(monthOnlyExpenses.length ? monthOnlyExpenses : state.expenses);
+  const categoryChart = computeExpensesByCategory(monthOnlyExpenses);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
@@ -70,6 +103,7 @@ export default function FinancePage() {
     { id: 'expenses', label: 'Expenses' },
     { id: 'payables', label: 'Payables' },
     { id: 'receivables', label: 'Receivables' },
+    { id: 'categories', label: 'Categories' },
   ];
 
   const confirmDelete = () => {
@@ -100,11 +134,11 @@ export default function FinancePage() {
                 type="month"
                 value={month}
                 onChange={e => setMonth(e.target.value)}
-                className="px-3 py-1.5 text-xs bg-raised border border-base rounded-xl text-primary"
+                className="px-3 py-1.5 text-xs bg-raised border border-base rounded-lg text-primary"
               />
-              <button onClick={() => setModal('income')} className="px-3 py-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">+ Income</button>
-              <button onClick={() => setModal('expense')} className="px-3 py-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl">+ Expense</button>
-              <button onClick={() => setModal('payable')} className="px-3 py-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl">+ Payable</button>
+              <button onClick={() => setModal('income')} className="px-3 py-1.5 text-xs text-secondary bg-raised border border-base rounded-lg">+ Income</button>
+              <button onClick={() => setModal('expense')} className="px-3 py-1.5 text-xs text-secondary bg-raised border border-base rounded-lg">+ Expense</button>
+              <button onClick={() => setModal('payable')} className="px-3 py-1.5 text-xs text-secondary bg-raised border border-base rounded-lg">+ Payable</button>
               <button onClick={() => setModal('receivable')} className={BTN_PRIMARY}><Plus size={14} />Receivable</button>
             </div>
           }
@@ -127,41 +161,43 @@ export default function FinancePage() {
         {tab === 'overview' && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-              <StatCard icon={<ArrowDownLeft size={16} className="text-emerald-400" />} label="Income" value={formatCurrency(monthIncome)} valueClass="text-emerald-400" />
-              <StatCard icon={<ArrowUpRight size={16} className="text-red-400" />} label="Expenses" value={formatCurrency(monthExpenses)} valueClass="text-red-400" />
-              <StatCard icon={<TrendingUp size={16} className="text-accent" />} label="Net cashflow" value={formatCurrency(net)} valueClass={net >= 0 ? 'text-emerald-400' : 'text-red-400'} hint={`${savingsRate}% savings rate`} />
-              <StatCard icon={<Landmark size={16} className="text-cyan-400" />} label="Burn / mo" value={formatCurrency(burnRate)} valueClass="text-primary" hint={runway !== null ? `~${runway}d surplus runway` : 'Watch spending'} />
+              <StatCard icon={<ArrowDownLeft size={16} className="text-muted" />} label="Income" value={formatCurrency(monthIncome)} valueClass="text-primary" />
+              <StatCard icon={<ArrowUpRight size={16} className="text-muted" />} label="Expenses" value={formatCurrency(monthExpenses)} valueClass="text-primary" />
+              <StatCard icon={<TrendingUp size={16} className="text-muted" />} label="Net cashflow" value={formatCurrency(net)} valueClass={net >= 0 ? 'text-[var(--chart-pos)]' : 'text-[var(--chart-neg)]'} hint={`${savingsRate}% savings rate`} />
+              <StatCard icon={<Landmark size={16} className="text-muted" />} label="Burn / mo" value={formatCurrency(burnRate)} valueClass="text-primary" hint={runway !== null ? `~${runway}d surplus runway` : 'Watch spending'} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
               <div className="card p-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted">Open payables (you owe)</p>
-                  <p className="text-xl font-bold text-amber-400 font-display">{formatCurrency(totalPayables)}</p>
+                  <p className="text-xl font-bold text-primary font-display">{formatCurrency(totalPayables)}</p>
                   <p className="text-[11px] text-muted mt-0.5">{openPayables.length} open</p>
                 </div>
-                <HandCoins size={22} className="text-amber-400/60" />
+                <HandCoins size={22} className="text-muted" />
               </div>
               <div className="card p-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted">Open receivables (owed to you)</p>
-                  <p className="text-xl font-bold text-cyan-400 font-display">{formatCurrency(totalReceivables)}</p>
+                  <p className="text-xl font-bold text-primary font-display">{formatCurrency(totalReceivables)}</p>
                   <p className="text-[11px] text-muted mt-0.5">{openReceivables.length} open</p>
                 </div>
-                <ArrowDownLeft size={22} className="text-cyan-400/60" />
+                <ArrowDownLeft size={22} className="text-muted" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               <div className="card p-5">
                 <h3 className="text-sm font-semibold font-display text-primary mb-1">Monthly cashflow</h3>
-                <p className="text-xs text-muted mb-4">Net income − expenses · last months</p>
-                <BarChart data={monthlyChart.map(m => ({ label: m.label, value: m.net }))} height={160} />
+                <p className="text-xs text-muted mb-4">Income vs expenses · last months</p>
+                <CashflowChart data={monthlyChart} height={200} />
               </div>
               <div className="card p-5">
                 <h3 className="text-sm font-semibold font-display text-primary mb-1">Spending by category</h3>
-                <p className="text-xs text-muted mb-4">{monthOnlyExpenses.length ? 'This month' : 'All time (no spend in selection)'}</p>
-                <DonutChart segments={categoryChart.map(c => ({ label: c.label, value: c.value }))} />
+                <p className="text-xs text-muted mb-4">
+                  {monthOnlyExpenses.length ? `Selected month · ${formatCurrency(monthExpenses)}` : 'No expenses this month'}
+                </p>
+                <CategoryBars segments={categoryChart.map(c => ({ label: c.label, value: c.value }))} />
               </div>
             </div>
 
@@ -204,7 +240,7 @@ export default function FinancePage() {
               <Filter size={13} className="text-muted" />
               <select value={expenseFilter} onChange={e => setExpenseFilter(e.target.value)} className={`${FORM_SELECT} max-w-xs`}>
                 <option value="all">All categories</option>
-                {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <LedgerList
@@ -220,6 +256,41 @@ export default function FinancePage() {
               onDelete={id => setDeleteTarget({ type: 'expense', id })}
             />
           </>
+        )}
+
+        {tab === 'categories' && (
+          <div className="max-w-lg">
+            <p className="text-sm text-secondary mb-4">
+              Create categories you actually use — gym fees, rent, internet, anything monthly or daily.
+            </p>
+            <div className="flex gap-2 mb-4">
+              <input
+                value={newCategory}
+                onChange={e => setNewCategory(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(newCategory); } }}
+                placeholder="e.g. Gym fees, Internet, Maid"
+                className={FORM_INPUT}
+              />
+              <button type="button" onClick={() => addCategory(newCategory)} className={BTN_PRIMARY}>
+                <Plus size={14} /> Add
+              </button>
+            </div>
+            <div className="space-y-2">
+              {categories.map(c => (
+                <div key={c} className="card px-4 py-3 flex items-center justify-between gap-3">
+                  <span className="text-sm text-primary">{c}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeCategory(c)}
+                    className="p-1.5 text-muted hover:text-red-400"
+                    title="Remove category"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {tab === 'payables' && (
@@ -301,6 +372,8 @@ export default function FinancePage() {
       {(modal === 'expense' || editingExpense) && (
         <ExpenseModal
           initial={editingExpense}
+          categories={categories}
+          onAddCategory={addCategory}
           onClose={() => { setModal(null); setEditingExpense(null); }}
           onSave={d => {
             if (editingExpense) {
@@ -452,39 +525,99 @@ function IncomeModal({ initial, onClose, onSave }: {
           </div>
         </ModalBody>
         <ModalFooter>
-          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Cancel</button>
+          <button type="submit" className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}>Save</button>
         </ModalFooter>
       </form>
     </Modal>
   );
 }
 
-function ExpenseModal({ initial, onClose, onSave }: {
+function ExpenseModal({ initial, categories, onAddCategory, onClose, onSave }: {
   initial?: FinanceExpense | null;
+  categories: string[];
+  onAddCategory: (label: string) => void;
   onClose: () => void;
-  onSave: (d: { category: ExpenseCategory; amount: number; currency: string; date: string; description: string; areaId: string | null }) => void;
+  onSave: (d: { category: string; amount: number; currency: string; date: string; description: string; areaId: string | null }) => void;
 }) {
-  const [category, setCategory] = useState<ExpenseCategory>(initial?.category ?? 'food');
+  const defaultCat = initial?.category ?? categories[0] ?? 'Other';
+  const [category, setCategory] = useState(defaultCat);
   const [amount, setAmount] = useState(initial?.amount?.toString() ?? '');
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [description, setDescription] = useState(initial?.description ?? '');
+  const [creating, setCreating] = useState(false);
+  const [custom, setCustom] = useState('');
+
+  const selectValue = categories.some(c => c.toLowerCase() === category.toLowerCase())
+    ? categories.find(c => c.toLowerCase() === category.toLowerCase())!
+    : category;
+
   return (
     <Modal title={initial ? 'Edit Expense' : 'Log Expense'} onClose={onClose}>
-      <form onSubmit={e => { e.preventDefault(); onSave({ category, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description, areaId: initial?.areaId ?? null }); }} className="flex flex-col flex-1 overflow-hidden">
+      <form
+        onSubmit={e => {
+          e.preventDefault();
+          const cat = normalizeCategoryLabel(category) || 'Other';
+          if (!categories.some(c => c.toLowerCase() === cat.toLowerCase())) {
+            onAddCategory(cat);
+          }
+          onSave({ category: cat, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description, areaId: initial?.areaId ?? null });
+        }}
+        className="flex flex-col flex-1 overflow-hidden"
+      >
         <ModalBody>
           <div className="space-y-3">
-            <select value={category} onChange={e => setCategory(e.target.value as ExpenseCategory)} className={FORM_SELECT}>
-              {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+            {!creating ? (
+              <div className="flex gap-2">
+                <select
+                  value={selectValue}
+                  onChange={e => {
+                    if (e.target.value === '__new__') {
+                      setCreating(true);
+                      return;
+                    }
+                    setCategory(e.target.value);
+                  }}
+                  className={FORM_SELECT}
+                >
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="__new__">+ Create new category…</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={custom}
+                  onChange={e => setCustom(e.target.value)}
+                  placeholder="New category name"
+                  className={FORM_INPUT}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className={BTN_PRIMARY}
+                  onClick={() => {
+                    const label = normalizeCategoryLabel(custom);
+                    if (!label) return;
+                    onAddCategory(label);
+                    setCategory(label);
+                    setCustom('');
+                    setCreating(false);
+                  }}
+                >
+                  Use
+                </button>
+                <button type="button" className="px-3 text-sm text-muted" onClick={() => setCreating(false)}>Cancel</button>
+              </div>
+            )}
             <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className={FORM_INPUT} />
           </div>
         </ModalBody>
         <ModalFooter>
-          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Cancel</button>
+          <button type="submit" className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}>Save</button>
         </ModalFooter>
       </form>
     </Modal>
@@ -520,8 +653,8 @@ function PartyModal({ title, initial, onClose, onSave, statusOptions }: {
           </div>
         </ModalBody>
         <ModalFooter>
-          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Cancel</button>
+          <button type="submit" className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}>Save</button>
         </ModalFooter>
       </form>
     </Modal>

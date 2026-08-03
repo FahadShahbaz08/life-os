@@ -51,15 +51,15 @@ export default function Sidebar() {
         <div className="flex items-center justify-between px-3 py-3.5 border-b border-base">
           {collapsed ? (
             <button onClick={() => setCollapsed(false)} className="mx-auto">
-              <div className="w-7 h-7 bg-[var(--accent)] rounded-lg flex items-center justify-center shadow-sm">
-                <Brain size={14} className="text-white" />
+              <div className="w-7 h-7 bg-[var(--accent)] rounded-md flex items-center justify-center">
+                <Brain size={14} className="text-[var(--bg-base)]" />
               </div>
             </button>
           ) : (
             <>
               <Link href="/" className="flex items-center gap-2">
-                <div className="w-7 h-7 bg-[var(--accent)] rounded-lg flex items-center justify-center shadow-sm">
-                  <Brain size={14} className="text-white" />
+                <div className="w-7 h-7 bg-[var(--accent)] rounded-md flex items-center justify-center">
+                  <Brain size={14} className="text-[var(--bg-base)]" />
                 </div>
                 <span className="font-display font-bold text-primary text-sm tracking-tight">Life OS</span>
               </Link>
@@ -72,7 +72,7 @@ export default function Sidebar() {
 
         <div className="flex-1 min-h-0 overflow-y-auto os-scroll-sidebar py-2 px-2">
           {!collapsed && (
-            <button onClick={() => setShowTaskForm(true)} className="w-full flex items-center gap-2 px-2.5 py-2 mb-2 text-sm font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl shadow-sm">
+            <button onClick={() => setShowTaskForm(true)} className="w-full flex items-center gap-2 px-2.5 py-2 mb-2 text-sm font-medium bg-[var(--accent)] text-[var(--bg-base)] hover:opacity-90 rounded-lg">
               <Plus size={15} />Add Task
             </button>
           )}
@@ -138,8 +138,8 @@ export default function Sidebar() {
             </Link>
           ))}
           <button onClick={() => setShowTaskForm(true)} className="flex flex-col items-center gap-0.5 px-2 py-1.5">
-            <div className="w-8 h-8 bg-[var(--accent)] rounded-xl flex items-center justify-center shadow-sm">
-              <Plus size={16} className="text-white" />
+            <div className="w-8 h-8 bg-[var(--accent)] rounded-lg flex items-center justify-center">
+              <Plus size={16} className="text-[var(--bg-base)]" />
             </div>
             <span className="text-[9px] font-medium text-muted">Add</span>
           </button>

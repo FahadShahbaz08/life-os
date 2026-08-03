@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Flag } from 'lucide-react';
+import { Plus, Edit2, Trash2, Flag, Minus } from 'lucide-react';
 import { Goal, GoalHorizon, GoalStatus } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
@@ -19,6 +19,8 @@ const HORIZONS: { value: GoalHorizon; label: string }[] = [
   { value: 'annual', label: 'Annual' },
   { value: 'long_term', label: 'Long-term' },
 ];
+
+const QUICK_ADD = [100, 500, 1000, 5000];
 
 export default function GoalsPage() {
   const { state, addGoal, updateGoal, deleteGoal } = useApp();
@@ -38,7 +40,7 @@ export default function GoalsPage() {
         />
 
         {state.goals.length === 0 ? (
-          <EmptyState icon={Flag} title="No goals yet" description="Set measurable goals separate from projects — lose 10kg, save $10k, launch your game."
+          <EmptyState icon={Flag} title="No goals yet" description="Set measurable goals — save 50,000, lose 10kg, ship a project."
             action={<button onClick={() => setShowForm(true)} className={BTN_PRIMARY}>Set first goal</button>}
           />
         ) : (
@@ -49,7 +51,10 @@ export default function GoalsPage() {
                 <div className="space-y-3">
                   {active.map(goal => (
                     <GoalCard key={goal.id} goal={goal} onEdit={() => setEditing(goal)} onDelete={() => setDeletingId(goal.id)}
-                      onProgress={v => updateGoal(goal.id, { currentValue: v })}
+                      onProgress={v => {
+                        updateGoal(goal.id, { currentValue: v });
+                        toast('Progress updated');
+                      }}
                     />
                   ))}
                 </div>
@@ -81,33 +86,144 @@ export default function GoalsPage() {
   );
 }
 
-function GoalCard({ goal, onEdit, onDelete, onProgress }: { goal: Goal; onEdit: () => void; onDelete: () => void; onProgress?: (v: number) => void }) {
+function GoalCard({ goal, onEdit, onDelete, onProgress }: {
+  goal: Goal;
+  onEdit: () => void;
+  onDelete: () => void;
+  onProgress?: (v: number) => void;
+}) {
   const pct = goalProgressPercent(goal);
   const horizon = HORIZONS.find(h => h.value === goal.horizon)?.label;
+  const [delta, setDelta] = useState('');
+  const [setExact, setSetExact] = useState('');
+  const [mode, setMode] = useState<'add' | 'set'>('add');
+
+  const applyAdd = () => {
+    if (!onProgress) return;
+    const n = Number(delta);
+    if (!Number.isFinite(n) || n === 0) return;
+    const next = Math.max(0, goal.currentValue + n);
+    onProgress(goal.targetValue != null ? Math.min(next, goal.targetValue * 2) : next);
+    setDelta('');
+  };
+
+  const applySet = () => {
+    if (!onProgress) return;
+    const n = Number(setExact);
+    if (!Number.isFinite(n) || n < 0) return;
+    onProgress(n);
+    setSetExact('');
+  };
+
   return (
-    <div className="bg-surface border border-base rounded-2xl p-5">
+    <div className="card p-5">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <h3 className="text-sm font-semibold text-primary">{goal.title}</h3>
           <p className="text-xs text-muted mt-0.5">{horizon}{goal.targetDate ? ` · ${formatDate(goal.targetDate)}` : ''}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={onEdit} className="p-1.5 text-muted hover:text-indigo-400 rounded-lg"><Edit2 size={13} /></button>
+          <button onClick={onEdit} className="p-1.5 text-muted hover:text-primary rounded-lg"><Edit2 size={13} /></button>
           <button onClick={onDelete} className="p-1.5 text-muted hover:text-red-400 rounded-lg"><Trash2 size={13} /></button>
         </div>
       </div>
       {goal.description && <p className="text-xs text-secondary mb-3">{goal.description}</p>}
-      {goal.targetValue && (
+      {goal.targetValue != null && goal.targetValue > 0 && (
         <div>
-          <div className="flex justify-between text-xs mb-1">
-            <span className="text-muted">{goal.currentValue} / {goal.targetValue} {goal.unit}</span>
-            <span className="text-secondary">{pct}%</span>
+          <div className="flex justify-between text-xs mb-1.5">
+            <span className="text-muted tabular-nums">
+              {goal.currentValue.toLocaleString()} / {goal.targetValue.toLocaleString()} {goal.unit}
+            </span>
+            <span className="text-secondary tabular-nums">{pct}%</span>
           </div>
           <ProgressBar value={pct} size="sm" />
+
           {onProgress && (
-            <div className="flex gap-2 mt-2">
-              <button onClick={() => onProgress(goal.currentValue + 1)} className="px-2 py-0.5 text-xs bg-raised rounded-lg">+1</button>
-              <button onClick={() => onProgress(Math.max(0, goal.currentValue - 1))} className="px-2 py-0.5 text-xs bg-raised rounded-lg">-1</button>
+            <div className="mt-3 space-y-2">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMode('add')}
+                  className={`px-2.5 py-1 text-[11px] rounded-md border ${mode === 'add' ? 'bg-raised border-base text-primary' : 'border-transparent text-muted'}`}
+                >
+                  Add / subtract
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('set')}
+                  className={`px-2.5 py-1 text-[11px] rounded-md border ${mode === 'set' ? 'bg-raised border-base text-primary' : 'border-transparent text-muted'}`}
+                >
+                  Set exact
+                </button>
+              </div>
+
+              {mode === 'add' ? (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_ADD.map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => onProgress(goal.currentValue + n)}
+                        className="px-2 py-1 text-[11px] bg-raised border border-base rounded-md text-secondary hover:text-primary"
+                      >
+                        +{n.toLocaleString()}
+                      </button>
+                    ))}
+                    {QUICK_ADD.map(n => (
+                      <button
+                        key={`m${n}`}
+                        type="button"
+                        onClick={() => onProgress(Math.max(0, goal.currentValue - n))}
+                        className="px-2 py-1 text-[11px] bg-raised border border-base rounded-md text-muted hover:text-primary"
+                      >
+                        −{n.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={delta}
+                      onChange={e => setDelta(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyAdd(); } }}
+                      placeholder={`Custom amount (${goal.unit || 'units'})`}
+                      className={`${FORM_INPUT} flex-1`}
+                    />
+                    <button type="button" onClick={applyAdd} className="px-3 py-2 text-xs font-medium bg-raised border border-base rounded-lg text-primary hover:bg-overlay inline-flex items-center gap-1">
+                      <Plus size={12} /> Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const n = Number(delta);
+                        if (!Number.isFinite(n) || n === 0) return;
+                        onProgress(Math.max(0, goal.currentValue - Math.abs(n)));
+                        setDelta('');
+                      }}
+                      className="px-3 py-2 text-xs font-medium bg-raised border border-base rounded-lg text-secondary hover:bg-overlay inline-flex items-center gap-1"
+                    >
+                      <Minus size={12} />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={setExact}
+                    onChange={e => setSetExact(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applySet(); } }}
+                    placeholder={`Set total progress (now ${goal.currentValue})`}
+                    className={`${FORM_INPUT} flex-1`}
+                  />
+                  <button type="button" onClick={applySet} className={BTN_PRIMARY}>
+                    Set
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -157,14 +273,14 @@ function GoalForm({ goal, onSave, onClose }: { goal: Goal | null; onSave: (d: Om
             <div className="grid grid-cols-3 gap-2">
               <input type="number" value={currentValue} onChange={e => setCurrentValue(e.target.value)} placeholder="Current" className={FORM_INPUT} />
               <input type="number" value={targetValue} onChange={e => setTargetValue(e.target.value)} placeholder="Target" className={FORM_INPUT} />
-              <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit (kg, $)" className={FORM_INPUT} />
+              <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit (PKR, kg)" className={FORM_INPUT} />
             </div>
             <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className={FORM_INPUT} />
           </div>
         </ModalBody>
         <ModalFooter>
-          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-xl">Save</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Cancel</button>
+          <button type="submit" className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}>Save</button>
         </ModalFooter>
       </form>
     </Modal>

@@ -13,7 +13,7 @@ export type ReminderStatus = 'pending' | 'sent' | 'dismissed' | 'snoozed';
 export type WaitingStatus = 'waiting' | 'follow_up_needed' | 'completed';
 export type FinanceReceivableStatus = 'pending' | 'partial' | 'collected' | 'written_off';
 export type FinancePayableStatus = 'pending' | 'partial' | 'paid';
-export type ExpenseCategory = 'food' | 'gym' | 'software' | 'fuel' | 'family' | 'entertainment' | 'business' | 'other';
+export type ExpenseCategory = string;
 export type IncomeSource = 'salary' | 'freelance' | 'business' | 'investment' | 'other';
 export type VisionType = 'one_year' | 'three_year' | 'five_year' | 'bucket_list' | 'dream_project';
 export type FocusSessionType = 'work' | 'short_break' | 'long_break';
@@ -291,6 +291,7 @@ export interface AppSettings {
   notifiedReminderIds: string[];
   googleCalendarSyncEnabled: boolean;
   defaultFollowUpIntervalMinutes: number | null;
+  expenseCategories: string[];
 }
 
 export interface AppState {

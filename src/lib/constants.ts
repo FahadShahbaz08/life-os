@@ -1,4 +1,4 @@
-import { Area, ExpenseCategory, IncomeSource, NoteCategory } from '@/types';
+import { Area, IncomeSource, NoteCategory } from '@/types';
 import { generateId } from './utils';
 
 export const STORAGE_KEY = 'lifeos_data';
@@ -47,16 +47,15 @@ export const NOTE_CATEGORIES: { value: NoteCategory; label: string }[] = [
   { value: 'journal', label: 'Journal' },
 ];
 
-export const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-  { value: 'food', label: 'Food' },
-  { value: 'gym', label: 'Gym' },
-  { value: 'software', label: 'Software' },
-  { value: 'fuel', label: 'Fuel' },
-  { value: 'family', label: 'Family' },
-  { value: 'entertainment', label: 'Entertainment' },
-  { value: 'business', label: 'Business' },
-  { value: 'other', label: 'Other' },
+export const DEFAULT_EXPENSE_CATEGORIES = [
+  'Food', 'Gym', 'Software', 'Fuel', 'Family', 'Entertainment', 'Business', 'Rent', 'Utilities', 'Transport', 'Health', 'Other',
 ];
+
+export const EXPENSE_CATEGORIES: { value: string; label: string }[] = DEFAULT_EXPENSE_CATEGORIES.map(c => ({
+  value: c.toLowerCase(),
+  label: c,
+}));
+
 
 export const INBOX_TYPES = [
   { value: 'idea', label: 'Idea' },
@@ -75,9 +74,10 @@ export const FOLLOW_UP_INTERVALS: { value: number | null; label: string }[] = [
   { value: 60, label: 'Every 1 hour' },
   { value: 120, label: 'Every 2 hours' },
 ];
-export const FORM_INPUT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/35 focus:border-accent';
-export const FORM_SELECT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-xl text-primary focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/35 focus:border-accent';
-export const BTN_PRIMARY = 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl transition-colors shadow-sm disabled:opacity-40';
-export const BTN_SECONDARY = 'px-4 py-2 text-sm font-medium text-secondary bg-raised hover:bg-overlay border border-base rounded-xl transition-colors';
-export const BTN_TAB_ACTIVE = 'bg-accent-subtle text-accent border border-accent';
-export const BTN_TAB_IDLE = 'bg-raised text-muted border border-base hover:text-secondary';
+export const FORM_INPUT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-lg text-primary placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)]';
+export const FORM_SELECT = 'w-full px-3 py-2 text-sm bg-raised border border-base rounded-lg text-primary focus:outline-none focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)]';
+export const BTN_PRIMARY = 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 bg-[var(--accent)] text-[var(--bg-base)] hover:opacity-90';
+export const BTN_SECONDARY = 'px-4 py-2 text-sm font-medium text-secondary bg-raised hover:bg-overlay border border-base rounded-lg transition-colors';
+export const BTN_TAB_ACTIVE = 'bg-accent-subtle text-primary border border-base';
+export const BTN_TAB_IDLE = 'bg-transparent text-muted border border-transparent hover:text-secondary hover:bg-raised';
+

@@ -3,7 +3,7 @@ import {
   Note, FocusSession, PomodoroStats, AppSettings, Area,
 } from '@/types';
 import { generateId } from './utils';
-import { createDefaultAreas, STORAGE_KEY, LEGACY_STORAGE_KEY } from './constants';
+import { createDefaultAreas, STORAGE_KEY, LEGACY_STORAGE_KEY, DEFAULT_EXPENSE_CATEGORIES } from './constants';
 
 const DEFAULT_SETTINGS: AppSettings = {
   topPriorityTaskIds: [],
@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifiedReminderIds: [],
   googleCalendarSyncEnabled: false,
   defaultFollowUpIntervalMinutes: 30,
+  expenseCategories: [...DEFAULT_EXPENSE_CATEGORIES],
 };
 
 export function createEmptyState(): AppState {
@@ -213,8 +214,37 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     trades: parsed.trades ?? [],
     activity: parsed.activity ?? [],
     notifications: parsed.notifications ?? [],
-    settings: { ...DEFAULT_SETTINGS, ...parsed.settings, googleCalendarSyncEnabled: false },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      ...parsed.settings,
+      googleCalendarSyncEnabled: false,
+      expenseCategories: mergeExpenseCategories(
+        parsed.settings?.expenseCategories,
+        parsed.expenses ?? [],
+      ),
+    },
   };
+}
+
+function mergeExpenseCategories(
+  stored: string[] | undefined,
+  expenses: { category?: string }[],
+): string[] {
+  const base = (stored?.length ? stored : DEFAULT_EXPENSE_CATEGORIES).map(c => c.trim()).filter(Boolean);
+  const fromData = expenses.map(e => e.category).filter((c): c is string => Boolean(c));
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const c of [...base, ...fromData]) {
+    const key = c.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // Prefer display form from base/customs as typed
+    merged.push(c);
+  }
+  // Normalize legacy snake_case keys
+  return merged.map(c =>
+    c.includes('_') ? c.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : c
+  );
 }
 
 export function loadState(): AppState {
