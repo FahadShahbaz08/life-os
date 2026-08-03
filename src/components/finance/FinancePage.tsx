@@ -25,6 +25,48 @@ function normalizeCategoryLabel(label: string): string {
   return label.trim().replace(/\s+/g, ' ');
 }
 
+/** Business start month: when the item first exists (created, or due date if earlier/later preference is create). */
+function ledgerStartMonth(item: { createdAt: string; dueDate: string | null }): string {
+  const created = item.createdAt.slice(0, 7);
+  // dueDate alone cannot put an item into past months before it was logged
+  return created;
+}
+
+/**
+ * Show AR/AP in a selected month with roll-forward:
+ * - Hide if not yet created (won't appear in prior months)
+ * - Open items (pending/partial) appear from create month through all future months until settled
+ * - Settled items appear from create month through the settlement month only
+ */
+function isLedgerItemActiveInMonth(
+  item: { createdAt: string; dueDate: string | null; updatedAt: string; status: string },
+  monthKey: string,
+  openStatuses: string[],
+): boolean {
+  const start = ledgerStartMonth(item);
+  if (start > monthKey) return false;
+
+  if (openStatuses.includes(item.status)) {
+    return true; // rolls forward while still open
+  }
+
+  // Settled: only through the month it was closed (updatedAt is set on status updates)
+  const closed = item.updatedAt.slice(0, 7);
+  return monthKey <= closed;
+}
+
+function isOpenInMonth(
+  item: { createdAt: string; dueDate: string | null; updatedAt: string; status: string },
+  monthKey: string,
+  openStatuses: string[],
+): boolean {
+  if (!isLedgerItemActiveInMonth(item, monthKey, openStatuses)) return false;
+  // Looking at historical month: if settled after month, or still open → open as of that month
+  if (openStatuses.includes(item.status)) return true;
+  const closed = item.updatedAt.slice(0, 7);
+  return closed > monthKey; // closed later → was still open during monthKey
+}
+
 export default function FinancePage() {
   const {
     state, addPayable, addReceivable, addExpense, addIncome,
@@ -71,6 +113,9 @@ export default function FinancePage() {
     toast('Category removed', 'info');
   };
 
+  const RECEIVABLE_OPEN = ['pending', 'partial'];
+  const PAYABLE_OPEN = ['pending', 'partial'];
+
   const monthIncome = useMemo(
     () => (state.incomes ?? []).filter(i => i.date.startsWith(month)).reduce((s, i) => s + i.amount, 0),
     [state.incomes, month]
@@ -79,8 +124,24 @@ export default function FinancePage() {
     () => state.expenses.filter(e => e.date.startsWith(month)).reduce((s, e) => s + e.amount, 0),
     [state.expenses, month]
   );
-  const openPayables = state.payables.filter(p => p.status !== 'paid');
-  const openReceivables = state.receivables.filter(r => r.status !== 'collected' && r.status !== 'written_off');
+
+  // AR/AP as-of selected month (open at that time / roll-forward)
+  const monthReceivables = useMemo(
+    () => state.receivables.filter(r => isLedgerItemActiveInMonth(r, month, RECEIVABLE_OPEN)),
+    [state.receivables, month]
+  );
+  const monthPayables = useMemo(
+    () => state.payables.filter(p => isLedgerItemActiveInMonth(p, month, PAYABLE_OPEN)),
+    [state.payables, month]
+  );
+  const openReceivables = useMemo(
+    () => state.receivables.filter(r => isOpenInMonth(r, month, RECEIVABLE_OPEN)),
+    [state.receivables, month]
+  );
+  const openPayables = useMemo(
+    () => state.payables.filter(p => isOpenInMonth(p, month, PAYABLE_OPEN)),
+    [state.payables, month]
+  );
   const totalPayables = openPayables.reduce((s, p) => s + p.amount, 0);
   const totalReceivables = openReceivables.reduce((s, r) => s + r.amount, 0);
   const net = monthIncome - monthExpenses;
@@ -295,14 +356,22 @@ export default function FinancePage() {
 
         {tab === 'payables' && (
           <div className="space-y-2">
-            {state.payables.length === 0 ? (
-              <p className="text-sm text-muted text-center py-8">No payables yet — track money you owe.</p>
-            ) : state.payables.map(p => (
+            <p className="text-xs text-muted mb-1">
+              Open balances roll into later months until paid. Items do not appear before the month you added them.
+            </p>
+            {monthPayables.length === 0 ? (
+              <p className="text-sm text-muted text-center py-8">No payables for this month.</p>
+            ) : monthPayables.map(p => {
+              const openHere = isOpenInMonth(p, month, PAYABLE_OPEN);
+              return (
               <div key={p.id} className="card p-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-primary truncate">{p.person}</p>
                   <p className="text-xs text-muted">{p.notes || 'Payment'}{p.dueDate ? ` · due ${formatDate(p.dueDate)}` : ''}</p>
-                  <StatusPill status={p.status} />
+                  <StatusPill status={openHere && p.status === 'paid' ? 'pending' : p.status} />
+                  {isOpenInMonth(p, month, PAYABLE_OPEN) && p.status === 'paid' && (
+                    <span className="text-[10px] text-muted ml-1">(open as of this month)</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-sm font-bold text-amber-400">{formatCurrency(p.amount)}</span>
@@ -318,20 +387,31 @@ export default function FinancePage() {
                   <button onClick={() => setDeleteTarget({ type: 'payable', id: p.id })} className="p-1.5 text-muted hover:text-red-400"><Trash2 size={13} /></button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         {tab === 'receivables' && (
           <div className="space-y-2">
-            {state.receivables.length === 0 ? (
-              <p className="text-sm text-muted text-center py-8">No receivables — track money others owe you.</p>
-            ) : state.receivables.map(r => (
+            <p className="text-xs text-muted mb-1">
+              Uncollected items carry into later months. New receivables only show from the month you add them.
+            </p>
+            {monthReceivables.length === 0 ? (
+              <p className="text-sm text-muted text-center py-8">No receivables for this month.</p>
+            ) : monthReceivables.map(r => {
+              const openHere = isOpenInMonth(r, month, RECEIVABLE_OPEN);
+              const displayStatus =
+                openHere && (r.status === 'collected' || r.status === 'written_off') ? 'pending' : r.status;
+              return (
               <div key={r.id} className="card p-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-primary truncate">{r.person}</p>
                   <p className="text-xs text-muted">{r.notes || 'Receivable'}{r.dueDate ? ` · due ${formatDate(r.dueDate)}` : ''}</p>
-                  <StatusPill status={r.status} />
+                  <StatusPill status={displayStatus} />
+                  {openHere && (r.status === 'collected' || r.status === 'written_off') && (
+                    <span className="text-[10px] text-muted block">Still open as of selected month · settled later</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-sm font-bold text-cyan-400">{formatCurrency(r.amount)}</span>
@@ -347,7 +427,8 @@ export default function FinancePage() {
                   <button onClick={() => setDeleteTarget({ type: 'receivable', id: r.id })} className="p-1.5 text-muted hover:text-red-400"><Trash2 size={13} /></button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
