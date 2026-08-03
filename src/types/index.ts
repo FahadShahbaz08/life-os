@@ -65,6 +65,7 @@ export interface Task {
   tags: string[];
   progressNotes: string;
   isTopPriority: boolean;
+  sortOrder: number;
   googleEventId: string | null;
   followUpIntervalMinutes: number | null;
   completedAt: string | null;

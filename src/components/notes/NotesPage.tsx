@@ -247,7 +247,7 @@ function NoteForm({ note, onSave, onClose }: {
         </ModalBody>
         <ModalFooter>
           <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Cancel</button>
-          <button type="submit" className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Save</button>
+          <button type="submit" className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}>Save</button>
         </ModalFooter>
       </form>
     </Modal>
@@ -287,8 +287,8 @@ function NoteDetail({ note, onClose, onEdit }: { note: Note; onClose: () => void
         </div>
       </ModalBody>
       <ModalFooter>
-        <button onClick={onEdit} className="flex-1 py-2 text-sm text-white bg-[var(--accent)] rounded-xl">Edit</button>
-        <button onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-xl">Close</button>
+        <button onClick={onEdit} className={`flex-1 ${BTN_PRIMARY}`}>Edit</button>
+        <button onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Close</button>
       </ModalFooter>
     </Modal>
   );

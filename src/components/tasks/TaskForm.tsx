@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Priority, TaskStatus, FocusQueue } from '@/types';
 import { PRIORITY_LABELS, TASK_STATUS_LABELS, todayISO } from '@/lib/utils';
-import { FORM_INPUT, FORM_SELECT, FOLLOW_UP_INTERVALS } from '@/lib/constants';
+import { FORM_INPUT, FORM_SELECT, FOLLOW_UP_INTERVALS, BTN_PRIMARY } from '@/lib/constants';
 import { buildTaskReminderAt } from '@/lib/utils';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { useApp } from '@/context/AppContext';
@@ -166,7 +166,7 @@ export default function TaskForm({ task, defaultProjectId, defaultAreaId, defaul
         </ModalBody>
         <ModalFooter>
           <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm font-medium text-secondary bg-raised hover:bg-base border border-base rounded-xl">Cancel</button>
-          <button type="submit" disabled={!title.trim()} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl disabled:opacity-40">
+          <button type="submit" disabled={!title.trim()} className={`flex-1 ${BTN_PRIMARY}`}>
             {task?.id ? 'Save' : 'Add Task'}
           </button>
         </ModalFooter>

@@ -24,6 +24,7 @@ type Action =
   | { type: 'ADD_TASK'; payload: Task }
   | { type: 'UPDATE_TASK'; id: string; data: Partial<Task> }
   | { type: 'DELETE_TASK'; id: string }
+  | { type: 'REORDER_TASKS'; orderedIds: string[] }
   | { type: 'ADD_INBOX'; payload: InboxItem }
   | { type: 'UPDATE_INBOX'; id: string; data: Partial<InboxItem> }
   | { type: 'DELETE_INBOX'; id: string }
@@ -126,6 +127,17 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'DELETE_TASK':
       return { ...state, tasks: state.tasks.filter(t => t.id !== action.id) };
+    case 'REORDER_TASKS': {
+      const orderMap = new Map(action.orderedIds.map((id, i) => [id, i]));
+      return {
+        ...state,
+        tasks: state.tasks.map(t => {
+          const idx = orderMap.get(t.id);
+          if (idx === undefined) return t;
+          return { ...t, sortOrder: idx, updatedAt: nowISO() };
+        }),
+      };
+    }
 
     case 'ADD_INBOX':
       return { ...state, inboxItems: [action.payload, ...state.inboxItems] };
@@ -286,13 +298,14 @@ export interface AppContextValue {
   addProject: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateProject: (id: string, data: Partial<Project>) => void;
   deleteProject: (id: string) => void;
-  addTask: (data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => void;
+  addTask: (data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId' | 'sortOrder'> & { sortOrder?: number }) => void;
   updateTask: (id: string, data: Partial<Task>) => void;
   deleteTask: (id: string) => void;
+  reorderTasks: (orderedIds: string[]) => void;
   addInboxItem: (data: Omit<InboxItem, 'id' | 'createdAt' | 'processed' | 'convertedToType' | 'convertedToId'>) => void;
   updateInboxItem: (id: string, data: Partial<InboxItem>) => void;
   deleteInboxItem: (id: string) => void;
-  processInboxToTask: (inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => void;
+  processInboxToTask: (inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId' | 'sortOrder'> & { sortOrder?: number }) => void;
   processInboxToNote: (inboxId: string, noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateGoal: (id: string, data: Partial<Goal>) => void;
@@ -511,13 +524,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateProject = useCallback((id: string, data: Partial<Project>) => dispatch({ type: 'UPDATE_PROJECT', id, data }), []);
   const deleteProject = useCallback((id: string) => dispatch({ type: 'DELETE_PROJECT', id }), []);
 
-  const addTask = useCallback((data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => {
+  const addTask = useCallback((data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId' | 'sortOrder'> & { sortOrder?: number }) => {
     const now = nowISO();
+    const maxOrder = stateRef.current.tasks.reduce((m, t) => Math.max(m, t.sortOrder ?? 0), -1);
     const task: Task = {
       ...data,
       id: generateId(),
       googleEventId: null,
       followUpIntervalMinutes: data.followUpIntervalMinutes ?? null,
+      sortOrder: data.sortOrder ?? maxOrder + 1,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
@@ -533,15 +548,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'DELETE_TASK', id });
   }, []);
 
+  const reorderTasks = useCallback((orderedIds: string[]) => {
+    dispatch({ type: 'REORDER_TASKS', orderedIds });
+  }, []);
+
   const addInboxItem = useCallback((data: Omit<InboxItem, 'id' | 'createdAt' | 'processed' | 'convertedToType' | 'convertedToId'>) => {
     dispatch({ type: 'ADD_INBOX', payload: { ...data, id: generateId(), processed: false, convertedToType: null, convertedToId: null, createdAt: nowISO() } });
   }, []);
   const updateInboxItem = useCallback((id: string, data: Partial<InboxItem>) => dispatch({ type: 'UPDATE_INBOX', id, data }), []);
   const deleteInboxItem = useCallback((id: string) => dispatch({ type: 'DELETE_INBOX', id }), []);
 
-  const processInboxToTask = useCallback((inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId'>) => {
+  const processInboxToTask = useCallback((inboxId: string, taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'googleEventId' | 'sortOrder'> & { sortOrder?: number }) => {
     const now = nowISO();
-    const task: Task = { ...taskData, id: generateId(), googleEventId: null, followUpIntervalMinutes: taskData.followUpIntervalMinutes ?? null, createdAt: now, updatedAt: now, completedAt: null };
+    const maxOrder = stateRef.current.tasks.reduce((m, t) => Math.max(m, t.sortOrder ?? 0), -1);
+    const task: Task = {
+      ...taskData,
+      id: generateId(),
+      googleEventId: null,
+      followUpIntervalMinutes: taskData.followUpIntervalMinutes ?? null,
+      sortOrder: taskData.sortOrder ?? maxOrder + 1,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    };
     dispatch({ type: 'ADD_TASK', payload: task });
     dispatch({ type: 'UPDATE_INBOX', id: inboxId, data: { processed: true, convertedToType: 'task', convertedToId: task.id } });
   }, []);
@@ -669,7 +698,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       state, filters, hydrated, syncStatus, isOnline, forceSync, setFilters, resetFilters, importState, updateSettings,
       addArea, updateArea, deleteArea,
       addProject, updateProject, deleteProject,
-      addTask, updateTask, deleteTask,
+      addTask, updateTask, deleteTask, reorderTasks,
       addInboxItem, updateInboxItem, deleteInboxItem, processInboxToTask, processInboxToNote,
       addGoal, updateGoal, deleteGoal,
       addHabit, updateHabit, deleteHabit, toggleHabitCompletion,

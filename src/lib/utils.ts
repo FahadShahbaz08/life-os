@@ -123,12 +123,29 @@ export function isActiveTask(t: Task): boolean {
 
 export function sortTasksByPriority(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
+    const ao = typeof a.sortOrder === 'number' ? a.sortOrder : Number.MAX_SAFE_INTEGER;
+    const bo = typeof b.sortOrder === 'number' ? b.sortOrder : Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
     const p = PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority];
     if (p !== 0) return p;
     if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
     if (a.dueDate) return -1;
     if (b.dueDate) return 1;
     return a.createdAt.localeCompare(b.createdAt);
+  });
+}
+
+/** Apply a new visual order to a subset of tasks (preserves relative positions of others). */
+export function applyTaskOrder(all: Task[], orderedIds: string[]): Task[] {
+  const orderMap = new Map(orderedIds.map((id, i) => [id, i]));
+  const minOrder = Math.min(
+    ...all.filter(t => orderMap.has(t.id)).map(t => t.sortOrder ?? 0),
+    0
+  );
+  return all.map(t => {
+    const idx = orderMap.get(t.id);
+    if (idx === undefined) return t;
+    return { ...t, sortOrder: minOrder + idx, updatedAt: new Date().toISOString() };
   });
 }
 
@@ -235,20 +252,25 @@ export function dayQueueReasonLabel(reason: DayQueueReason): string {
 export function computeDayQueue(state: AppState): DayQueueItem[] {
   const active = state.tasks.filter(isActiveTask);
   const now = todayISO();
-  const seen = new Set<string>();
-  const items: DayQueueItem[] = [];
 
-  const addTask = (task: Task, reason: DayQueueReason) => {
-    if (seen.has(task.id)) return;
-    seen.add(task.id);
-    items.push({ id: `task-${task.id}`, kind: 'task', reason, task });
-  };
+  const items: DayQueueItem[] = active
+    .filter(t => isOverdue(t.dueDate) || t.dueDate === now || t.isTopPriority)
+    .map(task => {
+      let reason: DayQueueReason = 'priority';
+      if (isOverdue(task.dueDate)) reason = 'overdue';
+      else if (task.dueDate === now) reason = 'today';
+      else if (task.isTopPriority) reason = 'priority';
+      return { id: `task-${task.id}`, kind: 'task' as const, reason, task };
+    });
 
-  sortTasksByPriority(active.filter(t => isOverdue(t.dueDate))).forEach(t => addTask(t, 'overdue'));
-  sortTasksByPriority(active.filter(t => t.dueDate === now)).forEach(t => addTask(t, 'today'));
-  sortTasksByPriority(active.filter(t => t.isTopPriority)).forEach(t => addTask(t, 'priority'));
-
-  return items;
+  return items.sort((a, b) => {
+    const ao = a.task?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.task?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    // overdue first when same order
+    const weight = (r: DayQueueReason) => (r === 'overdue' ? 0 : r === 'today' ? 1 : 2);
+    return weight(a.reason) - weight(b.reason);
+  });
 }
 
 export function computeTodayDashboard(state: AppState): TodayDashboard {

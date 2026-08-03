@@ -97,6 +97,7 @@ function migrateFromLegacy(raw: LegacyAppState): AppState {
       tags: [],
       progressNotes: t.progressNotes,
       isTopPriority: false,
+      sortOrder: 0,
       googleEventId: null,
       followUpIntervalMinutes: null,
       completedAt: t.status === 'done' ? t.updatedAt : null,
@@ -180,10 +181,11 @@ function normalizeProjects(projects: Project[] | undefined, areas: Area[]): Proj
 export function normalizeState(parsed: Partial<AppState>): AppState {
   const empty = createEmptyState();
   const areas = parsed.areas?.length ? parsed.areas : empty.areas;
-  const tasks = (parsed.tasks ?? []).map(t => ({
+  const tasks = (parsed.tasks ?? []).map((t, i) => ({
     ...t,
     googleEventId: t.googleEventId ?? null,
     followUpIntervalMinutes: t.followUpIntervalMinutes ?? null,
+    sortOrder: typeof t.sortOrder === 'number' ? t.sortOrder : i,
   }));
   const notes = (parsed.notes ?? []).map(n => ({
     ...n,

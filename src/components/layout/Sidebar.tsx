@@ -80,7 +80,7 @@ export default function Sidebar() {
           {MAIN_NAV.map(({ href, label, icon: Icon }) => (
             <Link key={href} href={href} title={collapsed ? label : undefined}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm font-medium transition-colors mb-0.5 ${
-                isActive(href) ? 'bg-accent-subtle text-accent border border-accent' : 'text-secondary hover:bg-raised hover:text-primary border border-transparent'
+              isActive(href) ? 'bg-raised text-primary border border-base' : 'text-secondary hover:bg-raised hover:text-primary border border-transparent'
               }`}>
               <Icon size={16} className="shrink-0" />
               {!collapsed && label}

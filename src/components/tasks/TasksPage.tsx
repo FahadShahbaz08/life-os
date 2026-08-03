@@ -14,12 +14,14 @@ import { isActiveTask, sortTasksByPriority } from '@/lib/utils';
 import { BTN_PRIMARY, BTN_TAB_ACTIVE, BTN_TAB_IDLE } from '@/lib/constants';
 
 export default function TasksPage() {
-  const { state, addTask, updateTask, deleteTask, toggleTopPriority } = useApp();
+  const { state, addTask, updateTask, deleteTask, toggleTopPriority, reorderTasks } = useApp();
   const { toast } = useToastContext();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [pendingComplete, setPendingComplete] = useState<Task | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const tasks = sortTasksByPriority(
     state.tasks.filter(t => {
@@ -28,6 +30,7 @@ export default function TasksPage() {
       return true;
     })
   );
+  const canReorder = filter === 'active';
 
   const handleStatusToggle = (task: Task) => {
     if (task.status === 'completed') {
@@ -38,10 +41,31 @@ export default function TasksPage() {
     setPendingComplete(task);
   };
 
+  const moveTask = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= tasks.length) return;
+    const ids = tasks.map(t => t.id);
+    const [item] = ids.splice(fromIndex, 1);
+    ids.splice(toIndex, 0, item);
+    reorderTasks(ids);
+  };
+
+  const handleDrop = (targetId: string) => {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+    const from = tasks.findIndex(t => t.id === dragId);
+    const to = tasks.findIndex(t => t.id === targetId);
+    if (from >= 0 && to >= 0) moveTask(from, to);
+    setDragId(null);
+    setOverId(null);
+  };
+
   return (
     <>
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-8">
-        <PageHeader title="All Tasks" subtitle={`${state.tasks.filter(isActiveTask).length} active tasks`}
+        <PageHeader title="All Tasks" subtitle={`${state.tasks.filter(isActiveTask).length} active · drag grip to reorder`}
           action={<button onClick={() => setShowForm(true)} className={BTN_PRIMARY}><Plus size={14} />New Task</button>}
         />
 
@@ -55,12 +79,24 @@ export default function TasksPage() {
           <EmptyState icon={ListTodo} title="No tasks" action={<button onClick={() => setShowForm(true)} className={BTN_PRIMARY}>Add task</button>} />
         ) : (
           <div className="space-y-2">
-            {tasks.map(task => (
-              <TaskCard key={task.id} task={task}
+            {tasks.map((task, index) => (
+              <TaskCard
+                key={task.id}
+                task={task}
                 onEdit={() => setEditing(task)}
                 onDelete={() => { deleteTask(task.id); toast('Deleted', 'info'); }}
                 onToggleTopPriority={() => toggleTopPriority(task.id)}
                 onStatusToggle={() => handleStatusToggle(task)}
+                canReorder={canReorder}
+                isFirst={index === 0}
+                isLast={index === tasks.length - 1}
+                onMoveUp={() => moveTask(index, index - 1)}
+                onMoveDown={() => moveTask(index, index + 1)}
+                onDragStart={() => setDragId(task.id)}
+                onDragOver={e => { e.preventDefault(); if (dragId) setOverId(task.id); }}
+                onDrop={() => handleDrop(task.id)}
+                isDragOver={overId === task.id && dragId !== task.id}
+                isDragging={dragId === task.id}
               />
             ))}
           </div>
@@ -79,7 +115,7 @@ export default function TasksPage() {
           message={`Confirm you finished “${pendingComplete.title}”.`}
           confirmLabel="Yes, complete"
           cancelLabel="Not yet"
-          variant="success"
+          variant="default"
           onConfirm={() => {
             updateTask(pendingComplete.id, { status: 'completed' });
             toast('Done!');
