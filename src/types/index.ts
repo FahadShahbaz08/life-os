@@ -180,6 +180,15 @@ export interface WaitingFor {
   completedAt: string | null;
 }
 
+export interface FinanceSettlement {
+  id: string;
+  amount: number;
+  accountId: string;
+  date: string;
+  note: string;
+  createdAt: string;
+}
+
 export interface FinanceReceivable {
   id: string;
   person: string;
@@ -188,6 +197,9 @@ export interface FinanceReceivable {
   dueDate: string | null;
   notes: string;
   status: FinanceReceivableStatus;
+  /** Cumulative collected toward `amount` */
+  amountCollected: number;
+  settlements: FinanceSettlement[];
   createdAt: string;
   updatedAt: string;
 }
@@ -200,6 +212,9 @@ export interface FinancePayable {
   dueDate: string | null;
   notes: string;
   status: FinancePayableStatus;
+  /** Cumulative paid toward `amount` */
+  amountPaid: number;
+  settlements: FinanceSettlement[];
   createdAt: string;
   updatedAt: string;
 }

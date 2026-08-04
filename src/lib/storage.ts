@@ -1,6 +1,7 @@
 import {
   AppState, ActivityEntry, LegacyAppState, LegacyProject, Task, Project,
   Note, FocusSession, PomodoroStats, AppSettings, Area, Trade,
+  FinancePayable, FinanceReceivable, FinanceSettlement,
 } from '@/types';
 import { generateId } from './utils';
 import { createDefaultAreas, STORAGE_KEY, LEGACY_STORAGE_KEY, DEFAULT_EXPENSE_CATEGORIES } from './constants';
@@ -211,8 +212,8 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     notes,
     reminders: parsed.reminders ?? [],
     waitingFor: parsed.waitingFor ?? [],
-    receivables: parsed.receivables ?? [],
-    payables: parsed.payables ?? [],
+    receivables: (parsed.receivables ?? []).map(normalizeReceivable),
+    payables: (parsed.payables ?? []).map(normalizePayable),
     expenses: (parsed.expenses ?? []).map(e => ({
       ...e,
       accountId: e.accountId ?? null,
@@ -242,6 +243,58 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
         parsed.expenses ?? [],
       ),
     },
+  };
+}
+
+function normalizeSettlement(s: Partial<FinanceSettlement>): FinanceSettlement {
+  return {
+    id: s.id ?? '',
+    amount: typeof s.amount === 'number' ? s.amount : 0,
+    accountId: s.accountId ?? '',
+    date: s.date ?? '',
+    note: s.note ?? '',
+    createdAt: s.createdAt ?? '',
+  };
+}
+
+function normalizePayable(p: Partial<FinancePayable>): FinancePayable {
+  const settlements = (p.settlements ?? []).map(normalizeSettlement);
+  const fromSettlements = settlements.reduce((s, x) => s + x.amount, 0);
+  const amountPaid = typeof p.amountPaid === 'number' ? p.amountPaid : fromSettlements;
+  return {
+    id: p.id ?? '',
+    person: p.person ?? '',
+    amount: p.amount ?? 0,
+    currency: p.currency ?? 'PKR',
+    dueDate: p.dueDate ?? null,
+    notes: p.notes ?? '',
+    status: p.status === 'partial' || p.status === 'paid' ? p.status : 'pending',
+    amountPaid: Math.max(amountPaid, fromSettlements),
+    settlements,
+    createdAt: p.createdAt ?? '',
+    updatedAt: p.updatedAt ?? '',
+  };
+}
+
+function normalizeReceivable(r: Partial<FinanceReceivable>): FinanceReceivable {
+  const settlements = (r.settlements ?? []).map(normalizeSettlement);
+  const fromSettlements = settlements.reduce((s, x) => s + x.amount, 0);
+  const amountCollected = typeof r.amountCollected === 'number' ? r.amountCollected : fromSettlements;
+  return {
+    id: r.id ?? '',
+    person: r.person ?? '',
+    amount: r.amount ?? 0,
+    currency: r.currency ?? 'PKR',
+    dueDate: r.dueDate ?? null,
+    notes: r.notes ?? '',
+    status:
+      r.status === 'partial' || r.status === 'collected' || r.status === 'written_off'
+        ? r.status
+        : 'pending',
+    amountCollected: Math.max(amountCollected, fromSettlements),
+    settlements,
+    createdAt: r.createdAt ?? '',
+    updatedAt: r.updatedAt ?? '',
   };
 }
 

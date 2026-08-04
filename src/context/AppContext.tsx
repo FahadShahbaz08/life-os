@@ -51,6 +51,22 @@ type Action =
   | { type: 'ADD_PAYABLE'; payload: FinancePayable }
   | { type: 'UPDATE_PAYABLE'; id: string; data: Partial<FinancePayable> }
   | { type: 'DELETE_PAYABLE'; id: string }
+  | {
+      type: 'RECORD_PAYABLE_PAYMENT';
+      id: string;
+      amount: number;
+      accountId: string;
+      date: string;
+      note: string;
+    }
+  | {
+      type: 'RECORD_RECEIVABLE_PAYMENT';
+      id: string;
+      amount: number;
+      accountId: string;
+      date: string;
+      note: string;
+    }
   | { type: 'ADD_EXPENSE'; payload: FinanceExpense }
   | { type: 'UPDATE_EXPENSE'; id: string; data: Partial<FinanceExpense> }
   | { type: 'DELETE_EXPENSE'; id: string }
@@ -208,18 +224,164 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, waitingFor: state.waitingFor.filter(w => w.id !== action.id) };
 
     case 'ADD_RECEIVABLE':
-      return { ...state, receivables: [...state.receivables, action.payload] };
+      return {
+        ...state,
+        receivables: [...state.receivables, {
+          ...action.payload,
+          amountCollected: action.payload.amountCollected ?? 0,
+          settlements: action.payload.settlements ?? [],
+        }],
+      };
     case 'UPDATE_RECEIVABLE':
       return { ...state, receivables: state.receivables.map(r => r.id === action.id ? { ...r, ...action.data, updatedAt: nowISO() } : r) };
-    case 'DELETE_RECEIVABLE':
-      return { ...state, receivables: state.receivables.filter(r => r.id !== action.id) };
+    case 'DELETE_RECEIVABLE': {
+      // Reverse all collections into accounts
+      const old = state.receivables.find(r => r.id === action.id);
+      let accounts = state.accounts ?? [];
+      if (old?.settlements?.length) {
+        const now = nowISO();
+        for (const s of old.settlements) {
+          if (!s.accountId || !(s.amount > 0)) continue;
+          accounts = accounts.map(a =>
+            a.id === s.accountId ? { ...a, balance: a.balance - s.amount, updatedAt: now } : a,
+          );
+        }
+      }
+      return {
+        ...state,
+        accounts,
+        receivables: state.receivables.filter(r => r.id !== action.id),
+      };
+    }
 
     case 'ADD_PAYABLE':
-      return { ...state, payables: [...state.payables, action.payload] };
+      return {
+        ...state,
+        payables: [...state.payables, {
+          ...action.payload,
+          amountPaid: action.payload.amountPaid ?? 0,
+          settlements: action.payload.settlements ?? [],
+        }],
+      };
     case 'UPDATE_PAYABLE':
       return { ...state, payables: state.payables.map(p => p.id === action.id ? { ...p, ...action.data, updatedAt: nowISO() } : p) };
-    case 'DELETE_PAYABLE':
-      return { ...state, payables: state.payables.filter(p => p.id !== action.id) };
+    case 'DELETE_PAYABLE': {
+      // Reverse all payments (refund accounts)
+      const old = state.payables.find(p => p.id === action.id);
+      let accounts = state.accounts ?? [];
+      if (old?.settlements?.length) {
+        const now = nowISO();
+        for (const s of old.settlements) {
+          if (!s.accountId || !(s.amount > 0)) continue;
+          accounts = accounts.map(a =>
+            a.id === s.accountId ? { ...a, balance: a.balance + s.amount, updatedAt: now } : a,
+          );
+        }
+      }
+      return {
+        ...state,
+        accounts,
+        payables: state.payables.filter(p => p.id !== action.id),
+      };
+    }
+
+    case 'RECORD_PAYABLE_PAYMENT': {
+      const p = state.payables.find(x => x.id === action.id);
+      if (!p || !(action.amount > 0) || !action.accountId) return state;
+      const now = nowISO();
+      const settlement = {
+        id: generateId(),
+        amount: action.amount,
+        accountId: action.accountId,
+        date: action.date || now.slice(0, 10),
+        note: action.note || '',
+        createdAt: now,
+      };
+      const amountPaid = (p.amountPaid ?? 0) + action.amount;
+      const status: FinancePayable['status'] =
+        amountPaid >= p.amount - 0.005 ? 'paid' : amountPaid > 0 ? 'partial' : 'pending';
+      const accounts = (state.accounts ?? []).map(a =>
+        a.id === action.accountId
+          ? { ...a, balance: a.balance - action.amount, updatedAt: now }
+          : a,
+      );
+      const accountTransfers = [{
+        id: generateId(),
+        kind: 'withdraw' as const,
+        fromAccountId: action.accountId,
+        toAccountId: null,
+        amount: action.amount,
+        currency: p.currency,
+        note: action.note || `Payable: ${p.person}`,
+        date: settlement.date,
+        createdAt: now,
+      }, ...(state.accountTransfers ?? [])];
+      return {
+        ...state,
+        accounts,
+        accountTransfers,
+        payables: state.payables.map(x =>
+          x.id === action.id
+            ? {
+                ...x,
+                amountPaid,
+                status,
+                settlements: [...(x.settlements ?? []), settlement],
+                updatedAt: now,
+              }
+            : x,
+        ),
+      };
+    }
+
+    case 'RECORD_RECEIVABLE_PAYMENT': {
+      const r = state.receivables.find(x => x.id === action.id);
+      if (!r || !(action.amount > 0) || !action.accountId) return state;
+      const now = nowISO();
+      const settlement = {
+        id: generateId(),
+        amount: action.amount,
+        accountId: action.accountId,
+        date: action.date || now.slice(0, 10),
+        note: action.note || '',
+        createdAt: now,
+      };
+      const amountCollected = (r.amountCollected ?? 0) + action.amount;
+      const status: FinanceReceivable['status'] =
+        amountCollected >= r.amount - 0.005 ? 'collected' : amountCollected > 0 ? 'partial' : 'pending';
+      const accounts = (state.accounts ?? []).map(a =>
+        a.id === action.accountId
+          ? { ...a, balance: a.balance + action.amount, updatedAt: now }
+          : a,
+      );
+      const accountTransfers = [{
+        id: generateId(),
+        kind: 'deposit' as const,
+        fromAccountId: null,
+        toAccountId: action.accountId,
+        amount: action.amount,
+        currency: r.currency,
+        note: action.note || `Receivable: ${r.person}`,
+        date: settlement.date,
+        createdAt: now,
+      }, ...(state.accountTransfers ?? [])];
+      return {
+        ...state,
+        accounts,
+        accountTransfers,
+        receivables: state.receivables.map(x =>
+          x.id === action.id
+            ? {
+                ...x,
+                amountCollected,
+                status,
+                settlements: [...(x.settlements ?? []), settlement],
+                updatedAt: now,
+              }
+            : x,
+        ),
+      };
+    }
 
     case 'ADD_EXPENSE': {
       const e = action.payload;
@@ -606,6 +768,8 @@ export interface AppContextValue {
   addPayable: (data: Omit<FinancePayable, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updatePayable: (id: string, data: Partial<FinancePayable>) => void;
   deletePayable: (id: string) => void;
+  recordPayablePayment: (id: string, data: { amount: number; accountId: string; date?: string; note?: string }) => boolean;
+  recordReceivablePayment: (id: string, data: { amount: number; accountId: string; date?: string; note?: string }) => boolean;
   addExpense: (data: Omit<FinanceExpense, 'id' | 'createdAt'>) => void;
   updateExpense: (id: string, data: Partial<FinanceExpense>) => void;
   deleteExpense: (id: string) => void;
@@ -910,16 +1074,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteWaitingFor = useCallback((id: string) => dispatch({ type: 'DELETE_WAITING', id }), []);
 
   const addReceivable = useCallback((data: Omit<FinanceReceivable, 'id' | 'createdAt' | 'updatedAt'>) => {
-    dispatch({ type: 'ADD_RECEIVABLE', payload: makeEntity<FinanceReceivable>(data) });
+    dispatch({
+      type: 'ADD_RECEIVABLE',
+      payload: makeEntity<FinanceReceivable>({
+        ...data,
+        amountCollected: data.amountCollected ?? 0,
+        settlements: data.settlements ?? [],
+      }),
+    });
   }, []);
   const updateReceivable = useCallback((id: string, data: Partial<FinanceReceivable>) => dispatch({ type: 'UPDATE_RECEIVABLE', id, data }), []);
   const deleteReceivable = useCallback((id: string) => dispatch({ type: 'DELETE_RECEIVABLE', id }), []);
 
   const addPayable = useCallback((data: Omit<FinancePayable, 'id' | 'createdAt' | 'updatedAt'>) => {
-    dispatch({ type: 'ADD_PAYABLE', payload: makeEntity<FinancePayable>(data) });
+    dispatch({
+      type: 'ADD_PAYABLE',
+      payload: makeEntity<FinancePayable>({
+        ...data,
+        amountPaid: data.amountPaid ?? 0,
+        settlements: data.settlements ?? [],
+      }),
+    });
   }, []);
   const updatePayable = useCallback((id: string, data: Partial<FinancePayable>) => dispatch({ type: 'UPDATE_PAYABLE', id, data }), []);
   const deletePayable = useCallback((id: string) => dispatch({ type: 'DELETE_PAYABLE', id }), []);
+
+  const recordPayablePayment = useCallback((id: string, data: { amount: number; accountId: string; date?: string; note?: string }) => {
+    if (!(data.amount > 0) || !data.accountId) return false;
+    const acc = state.accounts?.find(a => a.id === data.accountId);
+    if (acc && acc.balance < data.amount) return false;
+    dispatch({
+      type: 'RECORD_PAYABLE_PAYMENT',
+      id,
+      amount: data.amount,
+      accountId: data.accountId,
+      date: data.date ?? todayISO(),
+      note: data.note ?? '',
+    });
+    return true;
+  }, [state.accounts]);
+
+  const recordReceivablePayment = useCallback((id: string, data: { amount: number; accountId: string; date?: string; note?: string }) => {
+    if (!(data.amount > 0) || !data.accountId) return false;
+    dispatch({
+      type: 'RECORD_RECEIVABLE_PAYMENT',
+      id,
+      amount: data.amount,
+      accountId: data.accountId,
+      date: data.date ?? todayISO(),
+      note: data.note ?? '',
+    });
+    return true;
+  }, []);
 
   const addExpense = useCallback((data: Omit<FinanceExpense, 'id' | 'createdAt'>) => {
     dispatch({
@@ -1102,6 +1308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addWaitingFor, updateWaitingFor, deleteWaitingFor,
       addReceivable, updateReceivable, deleteReceivable,
       addPayable, updatePayable, deletePayable,
+      recordPayablePayment, recordReceivablePayment,
       addExpense, updateExpense, deleteExpense, addIncome, updateIncome, deleteIncome,
       addVisionItem, updateVisionItem, deleteVisionItem,
       addWeeklyReview, updateWeeklyReview,

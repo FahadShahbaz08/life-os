@@ -74,6 +74,7 @@ export default function FinancePage() {
     updatePayable, updateReceivable, updateExpense, updateIncome,
     deletePayable, deleteReceivable, deleteExpense, deleteIncome,
     updateSettings,
+    recordPayablePayment, recordReceivablePayment,
   } = useApp();
   const { toast } = useToastContext();
   const [tab, setTab] = useState<Tab>('overview');
@@ -82,6 +83,11 @@ export default function FinancePage() {
   const [editingExpense, setEditingExpense] = useState<FinanceExpense | null>(null);
   const [editingPayable, setEditingPayable] = useState<FinancePayable | null>(null);
   const [editingReceivable, setEditingReceivable] = useState<FinanceReceivable | null>(null);
+  const [settlement, setSettlement] = useState<
+    | { kind: 'payable'; item: FinancePayable; preferFull: boolean }
+    | { kind: 'receivable'; item: FinanceReceivable; preferFull: boolean }
+    | null
+  >(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: string; id: string } | null>(null);
   const [month, setMonth] = useState(todayISO().slice(0, 7));
   const [expenseFilter, setExpenseFilter] = useState<string>('all');
@@ -364,30 +370,46 @@ export default function FinancePage() {
         {tab === 'payables' && (
           <div className="space-y-2">
             <p className="text-xs text-muted mb-1">
-              Open balances roll into later months until paid. Items do not appear before the month you added them.
+              Record payments to pick bank/cash — balance updates automatically. Open balances roll forward until fully paid.
             </p>
             {monthPayables.length === 0 ? (
               <p className="text-sm text-muted text-center py-8">No payables for this month.</p>
             ) : monthPayables.map(p => {
               const openHere = isOpenInMonth(p, month, PAYABLE_OPEN);
+              const paid = p.amountPaid ?? 0;
+              const remaining = Math.max(0, p.amount - paid);
               return (
               <div key={p.id} className="card p-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-primary truncate">{p.person}</p>
                   <p className="text-xs text-muted">{p.notes || 'Payment'}{p.dueDate ? ` · due ${formatDate(p.dueDate)}` : ''}</p>
-                  <StatusPill status={openHere && p.status === 'paid' ? 'pending' : p.status} />
-                  {isOpenInMonth(p, month, PAYABLE_OPEN) && p.status === 'paid' && (
-                    <span className="text-[10px] text-muted ml-1">(open as of this month)</span>
-                  )}
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <StatusPill status={openHere && p.status === 'paid' ? 'pending' : p.status} />
+                    {paid > 0 && (
+                      <span className="text-[10px] text-muted">
+                        Paid {formatCurrency(paid)} · left {formatCurrency(remaining)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-sm font-bold text-amber-400">{formatCurrency(p.amount)}</span>
                   {p.status !== 'paid' && (
                     <>
-                      {p.status === 'pending' && (
-                        <button onClick={() => { updatePayable(p.id, { status: 'partial' }); toast('Marked partial'); }} className="px-2 py-1 text-[10px] bg-raised border border-base rounded-lg text-secondary">Partial</button>
-                      )}
-                      <button onClick={() => { updatePayable(p.id, { status: 'paid' }); toast('Marked paid'); }} className="px-2 py-1 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-lg inline-flex items-center gap-1"><CheckCircle2 size={10} />Paid</button>
+                      <button
+                        type="button"
+                        onClick={() => setSettlement({ kind: 'payable', item: p, preferFull: false })}
+                        className="px-2 py-1 text-[10px] bg-raised border border-base rounded-lg text-secondary"
+                      >
+                        Partial pay
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSettlement({ kind: 'payable', item: p, preferFull: true })}
+                        className="px-2 py-1 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-lg inline-flex items-center gap-1"
+                      >
+                        <CheckCircle2 size={10} />Pay full
+                      </button>
                     </>
                   )}
                   <button onClick={() => setEditingPayable(p)} className="p-1.5 text-muted hover:text-accent"><Edit2 size={13} /></button>
@@ -402,12 +424,14 @@ export default function FinancePage() {
         {tab === 'receivables' && (
           <div className="space-y-2">
             <p className="text-xs text-muted mb-1">
-              Uncollected items carry into later months. New receivables only show from the month you add them.
+              Record collections into a bank/cash account. Uncollected items carry into later months.
             </p>
             {monthReceivables.length === 0 ? (
               <p className="text-sm text-muted text-center py-8">No receivables for this month.</p>
             ) : monthReceivables.map(r => {
               const openHere = isOpenInMonth(r, month, RECEIVABLE_OPEN);
+              const collected = r.amountCollected ?? 0;
+              const remaining = Math.max(0, r.amount - collected);
               const displayStatus =
                 openHere && (r.status === 'collected' || r.status === 'written_off') ? 'pending' : r.status;
               return (
@@ -415,19 +439,33 @@ export default function FinancePage() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-primary truncate">{r.person}</p>
                   <p className="text-xs text-muted">{r.notes || 'Receivable'}{r.dueDate ? ` · due ${formatDate(r.dueDate)}` : ''}</p>
-                  <StatusPill status={displayStatus} />
-                  {openHere && (r.status === 'collected' || r.status === 'written_off') && (
-                    <span className="text-[10px] text-muted block">Still open as of selected month · settled later</span>
-                  )}
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <StatusPill status={displayStatus} />
+                    {collected > 0 && (
+                      <span className="text-[10px] text-muted">
+                        Got {formatCurrency(collected)} · left {formatCurrency(remaining)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-sm font-bold text-cyan-400">{formatCurrency(r.amount)}</span>
                   {r.status !== 'collected' && r.status !== 'written_off' && (
                     <>
-                      {r.status === 'pending' && (
-                        <button onClick={() => { updateReceivable(r.id, { status: 'partial' }); toast('Marked partial'); }} className="px-2 py-1 text-[10px] bg-raised border border-base rounded-lg text-secondary">Partial</button>
-                      )}
-                      <button onClick={() => { updateReceivable(r.id, { status: 'collected' }); toast('Collected'); }} className="px-2 py-1 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-lg">Collected</button>
+                      <button
+                        type="button"
+                        onClick={() => setSettlement({ kind: 'receivable', item: r, preferFull: false })}
+                        className="px-2 py-1 text-[10px] bg-raised border border-base rounded-lg text-secondary"
+                      >
+                        Partial
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSettlement({ kind: 'receivable', item: r, preferFull: true })}
+                        className="px-2 py-1 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-lg"
+                      >
+                        Collect full
+                      </button>
                     </>
                   )}
                   <button onClick={() => setEditingReceivable(r)} className="p-1.5 text-muted hover:text-accent"><Edit2 size={13} /></button>
@@ -439,6 +477,32 @@ export default function FinancePage() {
           </div>
         )}
       </div>
+
+      {settlement && (
+        <SettlementModal
+          settlement={settlement}
+          accounts={state.accounts ?? []}
+          onClose={() => setSettlement(null)}
+          onSave={d => {
+            if (settlement.kind === 'payable') {
+              const ok = recordPayablePayment(settlement.item.id, d);
+              if (!ok) {
+                toast('Could not pay — check amount and account balance', 'error');
+                return;
+              }
+              toast('Payment recorded — account updated');
+            } else {
+              const ok = recordReceivablePayment(settlement.item.id, d);
+              if (!ok) {
+                toast('Could not record collection', 'error');
+                return;
+              }
+              toast('Collection recorded — account updated');
+            }
+            setSettlement(null);
+          }}
+        />
+      )}
 
       {(modal === 'income' || editingIncome) && (
         <IncomeModal
@@ -488,7 +552,7 @@ export default function FinancePage() {
               updatePayable(editingPayable.id, { person: d.person, amount: d.amount, dueDate: d.date, notes: d.notes, status: d.status as FinancePayableStatus });
               toast('Payable updated');
             } else {
-              addPayable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending' });
+              addPayable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending', amountPaid: 0, settlements: [] });
               toast('Payable added');
             }
             setModal(null);
@@ -496,8 +560,6 @@ export default function FinancePage() {
           }}
           statusOptions={[
             { value: 'pending', label: 'Pending' },
-            { value: 'partial', label: 'Partial' },
-            { value: 'paid', label: 'Paid' },
           ]}
         />
       )}
@@ -511,7 +573,7 @@ export default function FinancePage() {
               updateReceivable(editingReceivable.id, { person: d.person, amount: d.amount, dueDate: d.date, notes: d.notes, status: d.status as FinanceReceivableStatus });
               toast('Receivable updated');
             } else {
-              addReceivable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending' });
+              addReceivable({ person: d.person, amount: d.amount, currency: DEFAULT_CURRENCY, dueDate: d.date, notes: d.notes, status: 'pending', amountCollected: 0, settlements: [] });
               toast('Receivable added');
             }
             setModal(null);
@@ -519,8 +581,6 @@ export default function FinancePage() {
           }}
           statusOptions={[
             { value: 'pending', label: 'Pending' },
-            { value: 'partial', label: 'Partial' },
-            { value: 'collected', label: 'Collected' },
             { value: 'written_off', label: 'Written off' },
           ]}
         />
@@ -821,6 +881,130 @@ function PartyModal({ title, initial, onClose, onSave, statusOptions }: {
         <ModalFooter>
           <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Cancel</button>
           <button type="submit" className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}>Save</button>
+        </ModalFooter>
+      </form>
+    </Modal>
+  );
+}
+
+function SettlementModal({
+  settlement,
+  accounts,
+  onClose,
+  onSave,
+}: {
+  settlement:
+    | { kind: 'payable'; item: FinancePayable; preferFull: boolean }
+    | { kind: 'receivable'; item: FinanceReceivable; preferFull: boolean };
+  accounts: FinanceAccount[];
+  onClose: () => void;
+  onSave: (d: { amount: number; accountId: string; date: string; note: string }) => void;
+}) {
+  const isPay = settlement.kind === 'payable';
+  const item = settlement.item;
+  const already = isPay
+    ? (item as FinancePayable).amountPaid ?? 0
+    : (item as FinanceReceivable).amountCollected ?? 0;
+  const remaining = Math.max(0, item.amount - already);
+  const defaultAmt = settlement.preferFull ? remaining : (remaining > 0 ? remaining : item.amount);
+
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  const [amount, setAmount] = useState(String(defaultAmt || ''));
+  const [date, setDate] = useState(todayISO());
+  const [note, setNote] = useState('');
+
+  const selected = accounts.find(a => a.id === accountId);
+  const n = Number(amount) || 0;
+
+  return (
+    <Modal
+      title={isPay ? `Pay · ${item.person}` : `Collect · ${item.person}`}
+      onClose={onClose}
+    >
+      <form
+        onSubmit={e => {
+          e.preventDefault();
+          if (!(n > 0) || !accountId) return;
+          onSave({ amount: n, accountId, date, note: note.trim() });
+        }}
+        className="flex flex-col flex-1 overflow-hidden"
+      >
+        <ModalBody>
+          <div className="text-xs text-muted mb-3 space-y-0.5">
+            <p>Total due {formatCurrency(item.amount)}</p>
+            {already > 0 && <p>Already {isPay ? 'paid' : 'collected'} {formatCurrency(already)}</p>}
+            <p>Remaining {formatCurrency(remaining)}</p>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">
+                {isPay ? 'Pay from account *' : 'Receive into account *'}
+              </label>
+              {accounts.length === 0 ? (
+                <p className="text-xs text-amber-500">
+                  Add a bank or cash account under Banks &amp; Cash first.
+                </p>
+              ) : (
+                <select value={accountId} onChange={e => setAccountId(e.target.value)} className={FORM_SELECT} required>
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.type}) · {formatCurrency(a.balance)}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {isPay && selected && n > selected.balance && (
+                <p className="text-[11px] text-red-400 mt-1">Amount exceeds this account’s balance.</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">
+                Amount this time (PKR) *
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                className={FORM_INPUT}
+                required
+                autoFocus
+              />
+              {remaining > 0 && (
+                <button
+                  type="button"
+                  className="text-[11px] text-accent underline mt-1.5"
+                  onClick={() => setAmount(String(remaining))}
+                >
+                  Use remaining ({formatCurrency(remaining)})
+                </button>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Note</label>
+              <input value={note} onChange={e => setNote(e.target.value)} placeholder="Optional" className={FORM_INPUT} />
+            </div>
+            <p className="text-[11px] text-muted">
+              {isPay
+                ? 'Deducted from the selected account. Status becomes partial or paid automatically.'
+                : 'Added to the selected account. Status becomes partial or collected automatically.'}
+            </p>
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-secondary bg-raised border border-base rounded-lg">Cancel</button>
+          <button
+            type="submit"
+            disabled={!accountId || !(n > 0) || accounts.length === 0 || (isPay && !!selected && n > selected.balance)}
+            className={`flex-1 py-2 text-sm ${BTN_PRIMARY}`}
+          >
+            {isPay ? 'Record payment' : 'Record collection'}
+          </button>
         </ModalFooter>
       </form>
     </Modal>
