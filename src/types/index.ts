@@ -351,6 +351,11 @@ export interface Trade {
   takeProfit: number | null;
   /** Total fees paid (open+close) */
   fees: number;
+  /**
+   * Amount actually deducted from exchange balance (in exchange.currency).
+   * Differs from margin when trade currency ≠ exchange currency.
+   */
+  exchangeDebitAmount: number | null;
   profitLoss: number | null;
   openedAt: string;
   closedAt: string | null;
@@ -368,6 +373,8 @@ export interface AppSettings {
   googleCalendarSyncEnabled: boolean;
   defaultFollowUpIntervalMinutes: number | null;
   expenseCategories: string[];
+  /** Trading UI quote unit */
+  tradingDisplayCurrency: 'PKR' | 'USDT';
 }
 
 export interface AppState {

@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   googleCalendarSyncEnabled: false,
   defaultFollowUpIntervalMinutes: 30,
   expenseCategories: [...DEFAULT_EXPENSE_CATEGORIES],
+  tradingDisplayCurrency: 'PKR',
 };
 
 export function createEmptyState(): AppState {
@@ -228,6 +229,8 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
       ...DEFAULT_SETTINGS,
       ...parsed.settings,
       googleCalendarSyncEnabled: false,
+      tradingDisplayCurrency:
+        parsed.settings?.tradingDisplayCurrency === 'USDT' ? 'USDT' : 'PKR',
       expenseCategories: mergeExpenseCategories(
         parsed.settings?.expenseCategories,
         parsed.expenses ?? [],
@@ -260,6 +263,7 @@ function normalizeTrade(t: Partial<Trade> & { investedAmount?: number }): Trade 
     stopLoss: t.stopLoss ?? null,
     takeProfit: t.takeProfit ?? null,
     fees: typeof t.fees === 'number' ? t.fees : 0,
+    exchangeDebitAmount: typeof t.exchangeDebitAmount === 'number' ? t.exchangeDebitAmount : null,
     profitLoss: t.profitLoss ?? null,
     openedAt: t.openedAt ?? '',
     closedAt: t.closedAt ?? null,

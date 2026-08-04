@@ -64,7 +64,7 @@ type Action =
   | { type: 'UPDATE_REVIEW'; id: string; data: Partial<WeeklyReview> }
   | { type: 'ADD_FOCUS_SESSION'; payload: FocusSession }
   | { type: 'ADD_TRADE'; payload: Trade }
-  | { type: 'UPDATE_TRADE'; id: string; data: Partial<Trade> }
+  | { type: 'UPDATE_TRADE'; id: string; data: Partial<Trade>; exchangeCredit?: number }
   | { type: 'DELETE_TRADE'; id: string }
   | { type: 'ADD_ACCOUNT'; payload: FinanceAccount }
   | { type: 'UPDATE_ACCOUNT'; id: string; data: Partial<FinanceAccount> }
@@ -253,10 +253,11 @@ function reducer(state: AppState, action: Action): AppState {
     case 'ADD_TRADE': {
       let exchanges = state.exchanges ?? [];
       const t = action.payload;
-      if (t.exchangeId && t.investedAmount > 0) {
+      const debit = t.exchangeDebitAmount ?? t.investedAmount;
+      if (t.exchangeId && debit > 0) {
         exchanges = exchanges.map(e =>
           e.id === t.exchangeId
-            ? { ...e, balance: e.balance - t.investedAmount, updatedAt: nowISO() }
+            ? { ...e, balance: e.balance - debit, updatedAt: nowISO() }
             : e,
         );
       }
@@ -268,7 +269,10 @@ function reducer(state: AppState, action: Action): AppState {
       let exchanges = state.exchanges ?? [];
       if (prev && prev.status === 'open' && action.data.status === 'closed' && prev.exchangeId) {
         const pnl = typeof action.data.profitLoss === 'number' ? action.data.profitLoss : (prev.profitLoss ?? 0);
-        const credit = prev.investedAmount + pnl;
+        const credit =
+          typeof action.exchangeCredit === 'number'
+            ? action.exchangeCredit
+            : (prev.exchangeDebitAmount ?? prev.investedAmount) + pnl;
         exchanges = exchanges.map(e =>
           e.id === prev.exchangeId
             ? { ...e, balance: e.balance + credit, updatedAt: nowISO() }
@@ -281,9 +285,10 @@ function reducer(state: AppState, action: Action): AppState {
       const t = state.trades.find(x => x.id === action.id);
       let exchanges = state.exchanges ?? [];
       if (t?.status === 'open' && t.exchangeId) {
+        const refund = t.exchangeDebitAmount ?? t.investedAmount;
         exchanges = exchanges.map(e =>
           e.id === t.exchangeId
-            ? { ...e, balance: e.balance + t.investedAmount, updatedAt: nowISO() }
+            ? { ...e, balance: e.balance + refund, updatedAt: nowISO() }
             : e,
         );
       }
@@ -504,7 +509,7 @@ export interface AppContextValue {
   updateWeeklyReview: (id: string, data: Partial<WeeklyReview>) => void;
   addFocusSession: (data: Omit<FocusSession, 'id'>) => void;
   addTrade: (data: Omit<Trade, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateTrade: (id: string, data: Partial<Trade>) => void;
+  updateTrade: (id: string, data: Partial<Trade>, opts?: { exchangeCredit?: number }) => void;
   deleteTrade: (id: string) => void;
   addAccount: (data: Omit<FinanceAccount, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateAccount: (id: string, data: Partial<FinanceAccount>) => void;
@@ -851,6 +856,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         stopLoss: data.stopLoss ?? null,
         takeProfit: data.takeProfit ?? null,
         fees: data.fees ?? 0,
+        exchangeDebitAmount: data.exchangeDebitAmount ?? null,
         exchangeId: data.exchangeId ?? null,
         id: generateId(),
         createdAt: now,
@@ -858,7 +864,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       },
     });
   }, []);
-  const updateTrade = useCallback((id: string, data: Partial<Trade>) => dispatch({ type: 'UPDATE_TRADE', id, data }), []);
+  const updateTrade = useCallback((id: string, data: Partial<Trade>, opts?: { exchangeCredit?: number }) => {
+    dispatch({ type: 'UPDATE_TRADE', id, data, exchangeCredit: opts?.exchangeCredit });
+  }, []);
   const deleteTrade = useCallback((id: string) => dispatch({ type: 'DELETE_TRADE', id }), []);
 
   const addAccount = useCallback((data: Omit<FinanceAccount, 'id' | 'createdAt' | 'updatedAt'>) => {
