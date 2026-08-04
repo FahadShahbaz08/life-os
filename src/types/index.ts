@@ -212,6 +212,8 @@ export interface FinanceExpense {
   date: string;
   description: string;
   areaId: string | null;
+  /** Bank/cash account money was paid from */
+  accountId: string | null;
   createdAt: string;
 }
 
@@ -222,6 +224,8 @@ export interface FinanceIncome {
   currency: string;
   date: string;
   description: string;
+  /** Bank/cash account money was received into */
+  accountId: string | null;
   createdAt: string;
 }
 

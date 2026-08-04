@@ -221,19 +221,129 @@ function reducer(state: AppState, action: Action): AppState {
     case 'DELETE_PAYABLE':
       return { ...state, payables: state.payables.filter(p => p.id !== action.id) };
 
-    case 'ADD_EXPENSE':
-      return { ...state, expenses: [action.payload, ...state.expenses] };
-    case 'UPDATE_EXPENSE':
-      return { ...state, expenses: state.expenses.map(e => e.id === action.id ? { ...e, ...action.data } : e) };
-    case 'DELETE_EXPENSE':
-      return { ...state, expenses: state.expenses.filter(e => e.id !== action.id) };
+    case 'ADD_EXPENSE': {
+      const e = action.payload;
+      let accounts = state.accounts ?? [];
+      let accountTransfers = state.accountTransfers ?? [];
+      if (e.accountId && e.amount > 0) {
+        const now = nowISO();
+        accounts = accounts.map(a =>
+          a.id === e.accountId ? { ...a, balance: a.balance - e.amount, updatedAt: now } : a,
+        );
+        accountTransfers = [{
+          id: generateId(),
+          kind: 'withdraw' as const,
+          fromAccountId: e.accountId,
+          toAccountId: null,
+          amount: e.amount,
+          currency: e.currency,
+          note: e.description || e.category || 'Expense',
+          date: e.date,
+          createdAt: now,
+        }, ...accountTransfers];
+      }
+      return { ...state, expenses: [e, ...state.expenses], accounts, accountTransfers };
+    }
+    case 'UPDATE_EXPENSE': {
+      const old = state.expenses.find(x => x.id === action.id);
+      if (!old) return state;
+      const next = { ...old, ...action.data };
+      let accounts = state.accounts ?? [];
+      const now = nowISO();
+      // reverse previous paid-from
+      if (old.accountId && old.amount > 0) {
+        accounts = accounts.map(a =>
+          a.id === old.accountId ? { ...a, balance: a.balance + old.amount, updatedAt: now } : a,
+        );
+      }
+      // apply new paid-from
+      if (next.accountId && next.amount > 0) {
+        accounts = accounts.map(a =>
+          a.id === next.accountId ? { ...a, balance: a.balance - next.amount, updatedAt: now } : a,
+        );
+      }
+      return {
+        ...state,
+        accounts,
+        expenses: state.expenses.map(e => e.id === action.id ? next : e),
+      };
+    }
+    case 'DELETE_EXPENSE': {
+      const old = state.expenses.find(x => x.id === action.id);
+      let accounts = state.accounts ?? [];
+      if (old?.accountId && old.amount > 0) {
+        const now = nowISO();
+        accounts = accounts.map(a =>
+          a.id === old.accountId ? { ...a, balance: a.balance + old.amount, updatedAt: now } : a,
+        );
+      }
+      return {
+        ...state,
+        accounts,
+        expenses: state.expenses.filter(e => e.id !== action.id),
+      };
+    }
 
-    case 'ADD_INCOME':
-      return { ...state, incomes: [action.payload, ...state.incomes] };
-    case 'UPDATE_INCOME':
-      return { ...state, incomes: state.incomes.map(i => i.id === action.id ? { ...i, ...action.data } : i) };
-    case 'DELETE_INCOME':
-      return { ...state, incomes: state.incomes.filter(i => i.id !== action.id) };
+    case 'ADD_INCOME': {
+      const inc = action.payload;
+      let accounts = state.accounts ?? [];
+      let accountTransfers = state.accountTransfers ?? [];
+      if (inc.accountId && inc.amount > 0) {
+        const now = nowISO();
+        accounts = accounts.map(a =>
+          a.id === inc.accountId ? { ...a, balance: a.balance + inc.amount, updatedAt: now } : a,
+        );
+        accountTransfers = [{
+          id: generateId(),
+          kind: 'deposit' as const,
+          fromAccountId: null,
+          toAccountId: inc.accountId,
+          amount: inc.amount,
+          currency: inc.currency,
+          note: inc.description || inc.source || 'Income',
+          date: inc.date,
+          createdAt: now,
+        }, ...accountTransfers];
+      }
+      return { ...state, incomes: [inc, ...state.incomes], accounts, accountTransfers };
+    }
+    case 'UPDATE_INCOME': {
+      const old = state.incomes.find(x => x.id === action.id);
+      if (!old) return state;
+      const next = { ...old, ...action.data };
+      let accounts = state.accounts ?? [];
+      const now = nowISO();
+      if (old.accountId && old.amount > 0) {
+        accounts = accounts.map(a =>
+          a.id === old.accountId ? { ...a, balance: a.balance - old.amount, updatedAt: now } : a,
+        );
+      }
+      if (next.accountId && next.amount > 0) {
+        accounts = accounts.map(a =>
+          a.id === next.accountId ? { ...a, balance: a.balance + next.amount, updatedAt: now } : a,
+        );
+      }
+      return {
+        ...state,
+        accounts,
+        incomes: state.incomes.map(i => i.id === action.id ? next : i),
+      };
+    }
+    case 'DELETE_INCOME': {
+      const old = state.incomes.find(x => x.id === action.id);
+      let accounts = state.accounts ?? [];
+      if (old?.accountId && old.amount > 0) {
+        const now = nowISO();
+        accounts = accounts.map(a =>
+          a.id === old.accountId ? { ...a, balance: a.balance - old.amount, updatedAt: now } : a,
+        );
+      }
+      return {
+        ...state,
+        accounts,
+        incomes: state.incomes.filter(i => i.id !== action.id),
+      };
+    }
 
     case 'ADD_VISION':
       return { ...state, visionItems: [...state.visionItems, action.payload] };
@@ -812,12 +922,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deletePayable = useCallback((id: string) => dispatch({ type: 'DELETE_PAYABLE', id }), []);
 
   const addExpense = useCallback((data: Omit<FinanceExpense, 'id' | 'createdAt'>) => {
-    dispatch({ type: 'ADD_EXPENSE', payload: { ...data, id: generateId(), createdAt: nowISO() } });
+    dispatch({
+      type: 'ADD_EXPENSE',
+      payload: {
+        ...data,
+        accountId: data.accountId ?? null,
+        id: generateId(),
+        createdAt: nowISO(),
+      },
+    });
   }, []);
   const updateExpense = useCallback((id: string, data: Partial<FinanceExpense>) => dispatch({ type: 'UPDATE_EXPENSE', id, data }), []);
   const deleteExpense = useCallback((id: string) => dispatch({ type: 'DELETE_EXPENSE', id }), []);
   const addIncome = useCallback((data: Omit<FinanceIncome, 'id' | 'createdAt'>) => {
-    dispatch({ type: 'ADD_INCOME', payload: { ...data, id: generateId(), createdAt: nowISO() } });
+    dispatch({
+      type: 'ADD_INCOME',
+      payload: {
+        ...data,
+        accountId: data.accountId ?? null,
+        id: generateId(),
+        createdAt: nowISO(),
+      },
+    });
   }, []);
   const updateIncome = useCallback((id: string, data: Partial<FinanceIncome>) => dispatch({ type: 'UPDATE_INCOME', id, data }), []);
   const deleteIncome = useCallback((id: string) => dispatch({ type: 'DELETE_INCOME', id }), []);

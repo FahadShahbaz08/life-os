@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   FinancePayableStatus, FinanceReceivableStatus, IncomeSource,
-  FinanceExpense, FinanceIncome, FinancePayable, FinanceReceivable,
+  FinanceExpense, FinanceIncome, FinancePayable, FinanceReceivable, FinanceAccount,
 } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
@@ -156,6 +156,10 @@ export default function FinancePage() {
   const monthOnlyExpenses = state.expenses.filter(e => e.date.startsWith(month));
   const categoryChart = computeExpensesByCategory(monthOnlyExpenses);
   const liquidTotal = (state.accounts ?? []).reduce((s, a) => s + a.balance, 0);
+  const accountLabel = (id: string | null | undefined) => {
+    if (!id) return null;
+    return (state.accounts ?? []).find(a => a.id === id)?.name ?? null;
+  };
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
@@ -280,7 +284,11 @@ export default function FinancePage() {
               .map(i => ({
                 id: i.id,
                 title: i.description || i.source,
-                meta: `${i.source} · ${formatDate(i.date)}`,
+                meta: [
+                  i.source,
+                  formatDate(i.date),
+                  accountLabel(i.accountId) ? `→ ${accountLabel(i.accountId)}` : null,
+                ].filter(Boolean).join(' · '),
                 amount: i.amount,
                 amountClass: 'text-emerald-400',
                 status: undefined,
@@ -304,7 +312,11 @@ export default function FinancePage() {
               items={filteredExpenses.map(e => ({
                 id: e.id,
                 title: e.description || e.category,
-                meta: `${e.category} · ${formatDate(e.date)}`,
+                meta: [
+                  e.category,
+                  formatDate(e.date),
+                  accountLabel(e.accountId) ? `from ${accountLabel(e.accountId)}` : null,
+                ].filter(Boolean).join(' · '),
                 amount: e.amount,
                 amountClass: 'text-primary',
               }))}
@@ -431,6 +443,7 @@ export default function FinancePage() {
       {(modal === 'income' || editingIncome) && (
         <IncomeModal
           initial={editingIncome}
+          accounts={state.accounts ?? []}
           onClose={() => { setModal(null); setEditingIncome(null); }}
           onSave={d => {
             if (editingIncome) {
@@ -449,6 +462,7 @@ export default function FinancePage() {
         <ExpenseModal
           initial={editingExpense}
           categories={categories}
+          accounts={state.accounts ?? []}
           onAddCategory={addCategory}
           onClose={() => { setModal(null); setEditingExpense(null); }}
           onSave={d => {
@@ -578,24 +592,64 @@ function LedgerList({ items, empty, onEdit, onDelete }: {
   );
 }
 
-function IncomeModal({ initial, onClose, onSave }: {
+function IncomeModal({ initial, accounts, onClose, onSave }: {
   initial?: FinanceIncome | null;
+  accounts: FinanceAccount[];
   onClose: () => void;
-  onSave: (d: { source: IncomeSource; amount: number; currency: string; date: string; description: string }) => void;
+  onSave: (d: {
+    source: IncomeSource;
+    amount: number;
+    currency: string;
+    date: string;
+    description: string;
+    accountId: string | null;
+  }) => void;
 }) {
   const [source, setSource] = useState<IncomeSource>(initial?.source ?? 'salary');
   const [amount, setAmount] = useState(initial?.amount?.toString() ?? '');
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [description, setDescription] = useState(initial?.description ?? '');
+  const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? '');
   return (
     <Modal title={initial ? 'Edit Income' : 'Log Income'} onClose={onClose}>
-      <form onSubmit={e => { e.preventDefault(); onSave({ source, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description }); }} className="flex flex-col flex-1 overflow-hidden">
+      <form
+        onSubmit={e => {
+          e.preventDefault();
+          onSave({
+            source,
+            amount: Number(amount),
+            currency: DEFAULT_CURRENCY,
+            date,
+            description,
+            accountId: accountId || null,
+          });
+        }}
+        className="flex flex-col flex-1 overflow-hidden"
+      >
         <ModalBody>
           <div className="space-y-3">
             <select value={source} onChange={e => setSource(e.target.value as IncomeSource)} className={FORM_SELECT}>
               {INCOME_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
             <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Received into *</label>
+              {accounts.length === 0 ? (
+                <p className="text-xs text-muted">
+                  No bank/cash accounts yet — add some under <strong>Banks &amp; Cash</strong>, or leave unlinked.
+                </p>
+              ) : (
+                <select value={accountId} onChange={e => setAccountId(e.target.value)} className={FORM_SELECT}>
+                  <option value="">Not linked to an account</option>
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.type}) · {formatCurrency(a.balance)}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <p className="text-[10px] text-muted mt-1">Balance on that account increases when you save.</p>
+            </div>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className={FORM_INPUT} />
           </div>
@@ -609,18 +663,28 @@ function IncomeModal({ initial, onClose, onSave }: {
   );
 }
 
-function ExpenseModal({ initial, categories, onAddCategory, onClose, onSave }: {
+function ExpenseModal({ initial, categories, accounts, onAddCategory, onClose, onSave }: {
   initial?: FinanceExpense | null;
   categories: string[];
+  accounts: FinanceAccount[];
   onAddCategory: (label: string) => void;
   onClose: () => void;
-  onSave: (d: { category: string; amount: number; currency: string; date: string; description: string; areaId: string | null }) => void;
+  onSave: (d: {
+    category: string;
+    amount: number;
+    currency: string;
+    date: string;
+    description: string;
+    areaId: string | null;
+    accountId: string | null;
+  }) => void;
 }) {
   const defaultCat = initial?.category ?? categories[0] ?? 'Other';
   const [category, setCategory] = useState(defaultCat);
   const [amount, setAmount] = useState(initial?.amount?.toString() ?? '');
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [description, setDescription] = useState(initial?.description ?? '');
+  const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? '');
   const [creating, setCreating] = useState(false);
   const [custom, setCustom] = useState('');
 
@@ -637,7 +701,15 @@ function ExpenseModal({ initial, categories, onAddCategory, onClose, onSave }: {
           if (!categories.some(c => c.toLowerCase() === cat.toLowerCase())) {
             onAddCategory(cat);
           }
-          onSave({ category: cat, amount: Number(amount), currency: DEFAULT_CURRENCY, date, description, areaId: initial?.areaId ?? null });
+          onSave({
+            category: cat,
+            amount: Number(amount),
+            currency: DEFAULT_CURRENCY,
+            date,
+            description,
+            areaId: initial?.areaId ?? null,
+            accountId: accountId || null,
+          });
         }}
         className="flex flex-col flex-1 overflow-hidden"
       >
@@ -687,6 +759,24 @@ function ExpenseModal({ initial, categories, onAddCategory, onClose, onSave }: {
               </div>
             )}
             <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount (PKR)" className={FORM_INPUT} required />
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Paid from *</label>
+              {accounts.length === 0 ? (
+                <p className="text-xs text-muted">
+                  No bank/cash accounts yet — add some under <strong>Banks &amp; Cash</strong>, or leave unlinked.
+                </p>
+              ) : (
+                <select value={accountId} onChange={e => setAccountId(e.target.value)} className={FORM_SELECT}>
+                  <option value="">Not linked to an account</option>
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.type}) · {formatCurrency(a.balance)}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <p className="text-[10px] text-muted mt-1">Balance on that account decreases when you save.</p>
+            </div>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={FORM_INPUT} />
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className={FORM_INPUT} />
           </div>

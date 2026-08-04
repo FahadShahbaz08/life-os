@@ -213,8 +213,14 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     waitingFor: parsed.waitingFor ?? [],
     receivables: parsed.receivables ?? [],
     payables: parsed.payables ?? [],
-    expenses: parsed.expenses ?? [],
-    incomes: parsed.incomes ?? [],
+    expenses: (parsed.expenses ?? []).map(e => ({
+      ...e,
+      accountId: e.accountId ?? null,
+    })),
+    incomes: (parsed.incomes ?? []).map(i => ({
+      ...i,
+      accountId: i.accountId ?? null,
+    })),
     accounts: parsed.accounts ?? [],
     accountTransfers: parsed.accountTransfers ?? [],
     visionItems: parsed.visionItems ?? [],
