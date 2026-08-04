@@ -1,6 +1,6 @@
 import {
   AppState, ActivityEntry, LegacyAppState, LegacyProject, Task, Project,
-  Note, FocusSession, PomodoroStats, AppSettings, Area,
+  Note, FocusSession, PomodoroStats, AppSettings, Area, Trade,
 } from '@/types';
 import { generateId } from './utils';
 import { createDefaultAreas, STORAGE_KEY, LEGACY_STORAGE_KEY, DEFAULT_EXPENSE_CATEGORIES } from './constants';
@@ -31,10 +31,14 @@ export function createEmptyState(): AppState {
     payables: [],
     expenses: [],
     incomes: [],
+    accounts: [],
+    accountTransfers: [],
     visionItems: [],
     weeklyReviews: [],
     focusSessions: [],
     trades: [],
+    exchanges: [],
+    exchangeFundings: [],
     activity: [],
     notifications: [],
     settings: { ...DEFAULT_SETTINGS },
@@ -210,10 +214,14 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
     payables: parsed.payables ?? [],
     expenses: parsed.expenses ?? [],
     incomes: parsed.incomes ?? [],
+    accounts: parsed.accounts ?? [],
+    accountTransfers: parsed.accountTransfers ?? [],
     visionItems: parsed.visionItems ?? [],
     weeklyReviews: parsed.weeklyReviews ?? [],
     focusSessions: parsed.focusSessions ?? [],
-    trades: parsed.trades ?? [],
+    trades: (parsed.trades ?? []).map(normalizeTrade),
+    exchanges: parsed.exchanges ?? [],
+    exchangeFundings: parsed.exchangeFundings ?? [],
     activity: parsed.activity ?? [],
     notifications: parsed.notifications ?? [],
     settings: {
@@ -225,6 +233,40 @@ export function normalizeState(parsed: Partial<AppState>): AppState {
         parsed.expenses ?? [],
       ),
     },
+  };
+}
+
+function normalizeTrade(t: Partial<Trade> & { investedAmount?: number }): Trade {
+  const invested = typeof t.investedAmount === 'number' ? t.investedAmount : (typeof t.margin === 'number' ? t.margin : 0);
+  const margin = typeof t.margin === 'number' ? t.margin : invested;
+  const market = t.market === 'futures' ? 'futures' : 'spot';
+  const side = t.side === 'short' ? 'short' : 'long';
+  const leverage = market === 'spot'
+    ? 1
+    : Math.max(1, typeof t.leverage === 'number' && t.leverage > 0 ? t.leverage : 1);
+  return {
+    id: t.id ?? '',
+    pair: t.pair ?? '',
+    market,
+    side,
+    currency: t.currency ?? 'PKR',
+    exchangeId: t.exchangeId ?? null,
+    investedAmount: margin,
+    margin,
+    leverage,
+    quantity: t.quantity ?? null,
+    entryPrice: t.entryPrice ?? null,
+    exitPrice: t.exitPrice ?? null,
+    stopLoss: t.stopLoss ?? null,
+    takeProfit: t.takeProfit ?? null,
+    fees: typeof t.fees === 'number' ? t.fees : 0,
+    profitLoss: t.profitLoss ?? null,
+    openedAt: t.openedAt ?? '',
+    closedAt: t.closedAt ?? null,
+    status: t.status === 'closed' ? 'closed' : 'open',
+    notes: t.notes ?? '',
+    createdAt: t.createdAt ?? '',
+    updatedAt: t.updatedAt ?? '',
   };
 }
 

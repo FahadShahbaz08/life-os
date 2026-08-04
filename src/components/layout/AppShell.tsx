@@ -23,7 +23,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="h-screen flex overflow-hidden bg-base min-h-0 relative z-10">
       <Sidebar />
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden pb-16 md:pb-0">
-        <header className="shrink-0 flex items-center justify-end gap-2 px-4 sm:px-6 py-2 border-b border-subtle bg-surface/40 backdrop-blur-sm">
+        <header className="shrink-0 relative z-[100] flex items-center justify-end gap-2 px-4 sm:px-6 py-2 border-b border-subtle bg-surface/40 backdrop-blur-sm">
           {(!isOnline || syncStatus === 'offline') && (
             <button
               onClick={forceSync}

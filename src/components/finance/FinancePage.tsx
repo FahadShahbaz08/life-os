@@ -15,11 +15,12 @@ import PageHeader from '@/components/ui/PageHeader';
 import Modal, { ModalBody, ModalFooter } from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { FORM_INPUT, FORM_SELECT, BTN_PRIMARY, INCOME_SOURCES, DEFAULT_CURRENCY, DEFAULT_EXPENSE_CATEGORIES } from '@/lib/constants';
-import { CashflowChart, CategoryBars } from '@/components/ui/Charts';
-import { computeExpensesByCategory, computeMonthlyCashflow } from '@/lib/chart-data';
+import { CategoryBars } from '@/components/ui/Charts';
+import { computeExpensesByCategory } from '@/lib/chart-data';
 import { formatCurrency, formatDate, todayISO } from '@/lib/utils';
+import AccountsPanel from '@/components/finance/AccountsPanel';
 
-type Tab = 'overview' | 'income' | 'expenses' | 'payables' | 'receivables' | 'categories';
+type Tab = 'overview' | 'accounts' | 'income' | 'expenses' | 'payables' | 'receivables' | 'categories';
 
 function normalizeCategoryLabel(label: string): string {
   return label.trim().replace(/\s+/g, ' ');
@@ -146,20 +147,19 @@ export default function FinancePage() {
   const totalReceivables = openReceivables.reduce((s, r) => s + r.amount, 0);
   const net = monthIncome - monthExpenses;
   const savingsRate = monthIncome > 0 ? Math.round((net / monthIncome) * 100) : 0;
-  const burnRate = monthExpenses;
-  const runway = monthExpenses > 0 && net < 0 ? null : monthExpenses > 0 ? Math.round(Math.max(net, 0) / (monthExpenses / 30)) : null;
 
   const upcomingPayables = openPayables
     .filter(p => p.dueDate)
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
     .slice(0, 5);
 
-  const monthlyChart = computeMonthlyCashflow(state.incomes ?? [], state.expenses);
   const monthOnlyExpenses = state.expenses.filter(e => e.date.startsWith(month));
   const categoryChart = computeExpensesByCategory(monthOnlyExpenses);
+  const liquidTotal = (state.accounts ?? []).reduce((s, a) => s + a.balance, 0);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'accounts', label: 'Banks & Cash' },
     { id: 'income', label: 'Income' },
     { id: 'expenses', label: 'Expenses' },
     { id: 'payables', label: 'Payables' },
@@ -225,7 +225,7 @@ export default function FinancePage() {
               <StatCard icon={<ArrowDownLeft size={16} className="text-muted" />} label="Income" value={formatCurrency(monthIncome)} valueClass="text-primary" />
               <StatCard icon={<ArrowUpRight size={16} className="text-muted" />} label="Expenses" value={formatCurrency(monthExpenses)} valueClass="text-primary" />
               <StatCard icon={<TrendingUp size={16} className="text-muted" />} label="Net cashflow" value={formatCurrency(net)} valueClass={net >= 0 ? 'text-[var(--chart-pos)]' : 'text-[var(--chart-neg)]'} hint={`${savingsRate}% savings rate`} />
-              <StatCard icon={<Landmark size={16} className="text-muted" />} label="Burn / mo" value={formatCurrency(burnRate)} valueClass="text-primary" hint={runway !== null ? `~${runway}d surplus runway` : 'Watch spending'} />
+              <StatCard icon={<Landmark size={16} className="text-muted" />} label="Banks + cash" value={formatCurrency(liquidTotal)} valueClass="text-primary" hint="See Banks & Cash tab" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
@@ -247,19 +247,12 @@ export default function FinancePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              <div className="card p-5">
-                <h3 className="text-sm font-semibold font-display text-primary mb-1">Monthly cashflow</h3>
-                <p className="text-xs text-muted mb-4">Income vs expenses · last months</p>
-                <CashflowChart data={monthlyChart} height={200} />
-              </div>
-              <div className="card p-5">
-                <h3 className="text-sm font-semibold font-display text-primary mb-1">Spending by category</h3>
-                <p className="text-xs text-muted mb-4">
-                  {monthOnlyExpenses.length ? `Selected month · ${formatCurrency(monthExpenses)}` : 'No expenses this month'}
-                </p>
-                <CategoryBars segments={categoryChart.map(c => ({ label: c.label, value: c.value }))} />
-              </div>
+            <div className="card p-5 mb-6">
+              <h3 className="text-sm font-semibold font-display text-primary mb-1">Spending by category</h3>
+              <p className="text-xs text-muted mb-4">
+                {monthOnlyExpenses.length ? `Selected month · ${formatCurrency(monthExpenses)}` : 'No expenses this month'}
+              </p>
+              <CategoryBars segments={categoryChart.map(c => ({ label: c.label, value: c.value }))} />
             </div>
 
             {upcomingPayables.length > 0 && (
@@ -275,6 +268,8 @@ export default function FinancePage() {
             )}
           </>
         )}
+
+        {tab === 'accounts' && <AccountsPanel />}
 
         {tab === 'income' && (
           <LedgerList

@@ -17,16 +17,16 @@ import { useToastContext } from '@/context/ToastContext';
 const MAIN_NAV = [
   { href: '/', label: 'Today', icon: LayoutGrid },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
-  { href: '/projects', label: 'Projects', icon: FolderKanban },
-  { href: '/trading', label: 'Trading', icon: TrendingUp },
-  { href: '/goals', label: 'Goals', icon: Flag },
-  { href: '/notes', label: 'Notes', icon: FileText },
   { href: '/books', label: 'Books', icon: BookOpen },
   { href: '/finance', label: 'Finance', icon: Wallet },
+  { href: '/trading', label: 'Trading', icon: TrendingUp },
+  { href: '/projects', label: 'Projects', icon: FolderKanban },
+  { href: '/goals', label: 'Goals', icon: Flag },
+  { href: '/notes', label: 'Notes', icon: FileText },
   { href: '/review', label: 'Performance', icon: CalendarCheck },
+  { href: '/search', label: 'Search', icon: Search },
   { href: '/vision', label: 'Life Vision', icon: Telescope },
   { href: '/focus-session', label: 'Timer', icon: Timer },
-  { href: '/search', label: 'Search', icon: Search },
 ];
 
 export default function Sidebar() {
@@ -130,9 +130,9 @@ export default function Sidebar() {
           {[
             { href: '/', icon: LayoutGrid, label: 'Today' },
             { href: '/tasks', icon: ListTodo, label: 'Tasks' },
-            { href: '/trading', icon: TrendingUp, label: 'Trading' },
+            { href: '/books', icon: BookOpen, label: 'Books' },
             { href: '/finance', icon: Wallet, label: 'Finance' },
-            { href: '/notes', icon: FileText, label: 'Notes' },
+            { href: '/trading', icon: TrendingUp, label: 'Trading' },
           ].map(({ href, icon: Icon, label }) => (
             <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 px-2 py-1.5 ${isActive(href) ? 'text-accent' : 'text-muted'}`}>
               <Icon size={18} /><span className="text-[9px] font-medium">{label}</span>

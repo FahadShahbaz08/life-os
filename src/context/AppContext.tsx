@@ -6,7 +6,7 @@ import {
   AppState, FilterState, Area, Project, Task, InboxItem, Goal, Habit,
   HabitCompletion, Note, Reminder, WaitingFor, FinanceReceivable, FinancePayable,
   FinanceExpense, VisionItem, WeeklyReview, FocusSession, AppSettings, Trade, FinanceIncome,
-  AppNotification,
+  AppNotification, FinanceAccount, AccountTransfer, TradingExchange, ExchangeFunding,
 } from '@/types';
 import { loadState, saveState, createActivity, createEmptyState } from '@/lib/storage';
 import { generateId, nowISO } from '@/lib/utils';
@@ -66,6 +66,22 @@ type Action =
   | { type: 'ADD_TRADE'; payload: Trade }
   | { type: 'UPDATE_TRADE'; id: string; data: Partial<Trade> }
   | { type: 'DELETE_TRADE'; id: string }
+  | { type: 'ADD_ACCOUNT'; payload: FinanceAccount }
+  | { type: 'UPDATE_ACCOUNT'; id: string; data: Partial<FinanceAccount> }
+  | { type: 'DELETE_ACCOUNT'; id: string }
+  | { type: 'ACCOUNT_MOVEMENT'; payload: {
+      kind: AccountTransfer['kind'];
+      fromAccountId: string | null;
+      toAccountId: string | null;
+      amount: number;
+      currency: string;
+      note: string;
+      date: string;
+    } }
+  | { type: 'ADD_EXCHANGE'; payload: TradingExchange }
+  | { type: 'UPDATE_EXCHANGE'; id: string; data: Partial<TradingExchange> }
+  | { type: 'DELETE_EXCHANGE'; id: string }
+  | { type: 'ADD_EXCHANGE_FUNDS'; payload: { exchangeId: string; amount: number; source: string; note: string; date: string } }
   | { type: 'TOGGLE_HABIT_COMPLETION'; habitId: string; date: string }
   | { type: 'ADD_NOTIFICATION'; payload: AppNotification }
   | { type: 'MARK_NOTIFICATION_READ'; id: string }
@@ -234,12 +250,144 @@ function reducer(state: AppState, action: Action): AppState {
     case 'ADD_FOCUS_SESSION':
       return { ...state, focusSessions: [action.payload, ...state.focusSessions] };
 
-    case 'ADD_TRADE':
-      return { ...state, trades: [action.payload, ...state.trades] };
-    case 'UPDATE_TRADE':
-      return { ...state, trades: state.trades.map(t => t.id === action.id ? { ...t, ...action.data, updatedAt: nowISO() } : t) };
-    case 'DELETE_TRADE':
-      return { ...state, trades: state.trades.filter(t => t.id !== action.id) };
+    case 'ADD_TRADE': {
+      let exchanges = state.exchanges ?? [];
+      const t = action.payload;
+      if (t.exchangeId && t.investedAmount > 0) {
+        exchanges = exchanges.map(e =>
+          e.id === t.exchangeId
+            ? { ...e, balance: e.balance - t.investedAmount, updatedAt: nowISO() }
+            : e,
+        );
+      }
+      return { ...state, trades: [t, ...state.trades], exchanges };
+    }
+    case 'UPDATE_TRADE': {
+      const prev = state.trades.find(x => x.id === action.id);
+      const trades = state.trades.map(t => t.id === action.id ? { ...t, ...action.data, updatedAt: nowISO() } : t);
+      let exchanges = state.exchanges ?? [];
+      if (prev && prev.status === 'open' && action.data.status === 'closed' && prev.exchangeId) {
+        const pnl = typeof action.data.profitLoss === 'number' ? action.data.profitLoss : (prev.profitLoss ?? 0);
+        const credit = prev.investedAmount + pnl;
+        exchanges = exchanges.map(e =>
+          e.id === prev.exchangeId
+            ? { ...e, balance: e.balance + credit, updatedAt: nowISO() }
+            : e,
+        );
+      }
+      return { ...state, trades, exchanges };
+    }
+    case 'DELETE_TRADE': {
+      const t = state.trades.find(x => x.id === action.id);
+      let exchanges = state.exchanges ?? [];
+      if (t?.status === 'open' && t.exchangeId) {
+        exchanges = exchanges.map(e =>
+          e.id === t.exchangeId
+            ? { ...e, balance: e.balance + t.investedAmount, updatedAt: nowISO() }
+            : e,
+        );
+      }
+      return { ...state, trades: state.trades.filter(x => x.id !== action.id), exchanges };
+    }
+
+    case 'ADD_ACCOUNT':
+      return { ...state, accounts: [...(state.accounts ?? []), action.payload] };
+    case 'UPDATE_ACCOUNT':
+      return {
+        ...state,
+        accounts: (state.accounts ?? []).map(a =>
+          a.id === action.id ? { ...a, ...action.data, updatedAt: nowISO() } : a,
+        ),
+      };
+    case 'DELETE_ACCOUNT':
+      return {
+        ...state,
+        accounts: (state.accounts ?? []).filter(a => a.id !== action.id),
+        accountTransfers: (state.accountTransfers ?? []).filter(
+          t => t.fromAccountId !== action.id && t.toAccountId !== action.id,
+        ),
+      };
+    case 'ACCOUNT_MOVEMENT': {
+      const { kind, fromAccountId, toAccountId, amount, currency, note, date } = action.payload;
+      if (!(amount > 0)) return state;
+      const accounts = [...(state.accounts ?? [])];
+      const now = nowISO();
+
+      if (kind === 'transfer') {
+        if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) return state;
+        const from = accounts.find(a => a.id === fromAccountId);
+        const to = accounts.find(a => a.id === toAccountId);
+        if (!from || !to || from.balance < amount) return state;
+        const next = accounts.map(a => {
+          if (a.id === fromAccountId) return { ...a, balance: a.balance - amount, updatedAt: now };
+          if (a.id === toAccountId) return { ...a, balance: a.balance + amount, updatedAt: now };
+          return a;
+        });
+        const row: AccountTransfer = {
+          id: generateId(), kind, fromAccountId, toAccountId, amount, currency, note, date, createdAt: now,
+        };
+        return { ...state, accounts: next, accountTransfers: [row, ...(state.accountTransfers ?? [])] };
+      }
+
+      if (kind === 'deposit') {
+        if (!toAccountId) return state;
+        if (!accounts.some(a => a.id === toAccountId)) return state;
+        const next = accounts.map(a =>
+          a.id === toAccountId ? { ...a, balance: a.balance + amount, updatedAt: now } : a,
+        );
+        const row: AccountTransfer = {
+          id: generateId(), kind, fromAccountId: null, toAccountId, amount, currency, note, date, createdAt: now,
+        };
+        return { ...state, accounts: next, accountTransfers: [row, ...(state.accountTransfers ?? [])] };
+      }
+
+      if (kind === 'withdraw') {
+        if (!fromAccountId) return state;
+        const from = accounts.find(a => a.id === fromAccountId);
+        if (!from || from.balance < amount) return state;
+        const next = accounts.map(a =>
+          a.id === fromAccountId ? { ...a, balance: a.balance - amount, updatedAt: now } : a,
+        );
+        const row: AccountTransfer = {
+          id: generateId(), kind, fromAccountId, toAccountId: null, amount, currency, note, date, createdAt: now,
+        };
+        return { ...state, accounts: next, accountTransfers: [row, ...(state.accountTransfers ?? [])] };
+      }
+      return state;
+    }
+
+    case 'ADD_EXCHANGE':
+      return { ...state, exchanges: [...(state.exchanges ?? []), action.payload] };
+    case 'UPDATE_EXCHANGE':
+      return {
+        ...state,
+        exchanges: (state.exchanges ?? []).map(e =>
+          e.id === action.id ? { ...e, ...action.data, updatedAt: nowISO() } : e,
+        ),
+      };
+    case 'DELETE_EXCHANGE':
+      return {
+        ...state,
+        exchanges: (state.exchanges ?? []).filter(e => e.id !== action.id),
+        exchangeFundings: (state.exchangeFundings ?? []).filter(f => f.exchangeId !== action.id),
+        trades: state.trades.map(t => t.exchangeId === action.id ? { ...t, exchangeId: null } : t),
+      };
+    case 'ADD_EXCHANGE_FUNDS': {
+      const { exchangeId, amount, source, note, date } = action.payload;
+      if (!(amount > 0)) return state;
+      if (!(state.exchanges ?? []).some(e => e.id === exchangeId)) return state;
+      const now = nowISO();
+      const funding: ExchangeFunding = {
+        id: generateId(), exchangeId, amount, source, note, date, createdAt: now,
+      };
+      return {
+        ...state,
+        exchanges: (state.exchanges ?? []).map(e =>
+          e.id === exchangeId ? { ...e, balance: e.balance + amount, updatedAt: now } : e,
+        ),
+        exchangeFundings: [funding, ...(state.exchangeFundings ?? [])],
+      };
+    }
 
     case 'TOGGLE_HABIT_COMPLETION': {
       const habit = state.habits.find(h => h.id === action.habitId);
@@ -269,10 +417,24 @@ function reducer(state: AppState, action: Action): AppState {
       };
     case 'MARK_ALL_NOTIFICATIONS_READ':
       return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) };
-    case 'CLEAR_NOTIFICATIONS':
-      return { ...state, notifications: [] };
-    case 'DISMISS_NOTIFICATION':
-      return { ...state, notifications: state.notifications.filter(n => n.id !== action.id) };
+    case 'CLEAR_NOTIFICATIONS': {
+      const extra = state.notifications.map(n => n.id);
+      const ids = [...new Set([...(state.settings.notifiedReminderIds ?? []), ...extra])].slice(-200);
+      return {
+        ...state,
+        notifications: [],
+        settings: { ...state.settings, notifiedReminderIds: ids },
+      };
+    }
+    case 'DISMISS_NOTIFICATION': {
+      const ids = [...(state.settings.notifiedReminderIds ?? [])];
+      if (!ids.includes(action.id)) ids.push(action.id);
+      return {
+        ...state,
+        notifications: state.notifications.filter(n => n.id !== action.id),
+        settings: { ...state.settings, notifiedReminderIds: ids.slice(-200) },
+      };
+    }
 
     default:
       return state;
@@ -344,6 +506,22 @@ export interface AppContextValue {
   addTrade: (data: Omit<Trade, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateTrade: (id: string, data: Partial<Trade>) => void;
   deleteTrade: (id: string) => void;
+  addAccount: (data: Omit<FinanceAccount, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateAccount: (id: string, data: Partial<FinanceAccount>) => void;
+  deleteAccount: (id: string) => void;
+  moveAccountMoney: (data: {
+    kind: AccountTransfer['kind'];
+    fromAccountId?: string | null;
+    toAccountId?: string | null;
+    amount: number;
+    currency?: string;
+    note?: string;
+    date?: string;
+  }) => boolean;
+  addExchange: (data: Omit<TradingExchange, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateExchange: (id: string, data: Partial<TradingExchange>) => void;
+  deleteExchange: (id: string) => void;
+  addExchangeFunds: (data: { exchangeId: string; amount: number; source?: string; note?: string; date?: string }) => void;
   setTopPriorities: (taskIds: string[]) => void;
   toggleTopPriority: (taskId: string) => void;
   pushNotification: (data: Omit<AppNotification, 'id' | 'createdAt' | 'read'> & { id?: string }) => void;
@@ -656,10 +834,93 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addTrade = useCallback((data: Omit<Trade, 'id' | 'createdAt' | 'updatedAt'>) => {
     const now = nowISO();
-    dispatch({ type: 'ADD_TRADE', payload: { ...data, id: generateId(), createdAt: now, updatedAt: now } });
+    const margin = typeof data.margin === 'number' ? data.margin : data.investedAmount;
+    const market = data.market === 'futures' ? 'futures' : 'spot';
+    dispatch({
+      type: 'ADD_TRADE',
+      payload: {
+        ...data,
+        market,
+        side: data.side === 'short' ? 'short' : 'long',
+        leverage: market === 'spot' ? 1 : Math.max(1, data.leverage || 1),
+        margin,
+        investedAmount: margin,
+        quantity: data.quantity ?? null,
+        entryPrice: data.entryPrice ?? null,
+        exitPrice: data.exitPrice ?? null,
+        stopLoss: data.stopLoss ?? null,
+        takeProfit: data.takeProfit ?? null,
+        fees: data.fees ?? 0,
+        exchangeId: data.exchangeId ?? null,
+        id: generateId(),
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
   }, []);
   const updateTrade = useCallback((id: string, data: Partial<Trade>) => dispatch({ type: 'UPDATE_TRADE', id, data }), []);
   const deleteTrade = useCallback((id: string) => dispatch({ type: 'DELETE_TRADE', id }), []);
+
+  const addAccount = useCallback((data: Omit<FinanceAccount, 'id' | 'createdAt' | 'updatedAt'>) => {
+    dispatch({ type: 'ADD_ACCOUNT', payload: makeEntity<FinanceAccount>(data) });
+  }, []);
+  const updateAccount = useCallback((id: string, data: Partial<FinanceAccount>) =>
+    dispatch({ type: 'UPDATE_ACCOUNT', id, data }), []);
+  const deleteAccount = useCallback((id: string) => dispatch({ type: 'DELETE_ACCOUNT', id }), []);
+  const moveAccountMoney = useCallback((data: {
+    kind: AccountTransfer['kind'];
+    fromAccountId?: string | null;
+    toAccountId?: string | null;
+    amount: number;
+    currency?: string;
+    note?: string;
+    date?: string;
+  }): boolean => {
+    if (!(data.amount > 0)) return false;
+    if (data.kind === 'transfer') {
+      const from = state.accounts?.find(a => a.id === data.fromAccountId);
+      if (!from || !data.toAccountId || from.balance < data.amount) return false;
+    }
+    if (data.kind === 'withdraw') {
+      const from = state.accounts?.find(a => a.id === data.fromAccountId);
+      if (!from || from.balance < data.amount) return false;
+    }
+    if (data.kind === 'deposit' && !data.toAccountId) return false;
+    dispatch({
+      type: 'ACCOUNT_MOVEMENT',
+      payload: {
+        kind: data.kind,
+        fromAccountId: data.fromAccountId ?? null,
+        toAccountId: data.toAccountId ?? null,
+        amount: data.amount,
+        currency: data.currency ?? 'PKR',
+        note: data.note ?? '',
+        date: data.date ?? todayISO(),
+      },
+    });
+    return true;
+  }, [state.accounts]);
+
+  const addExchange = useCallback((data: Omit<TradingExchange, 'id' | 'createdAt' | 'updatedAt'>) => {
+    dispatch({ type: 'ADD_EXCHANGE', payload: makeEntity<TradingExchange>(data) });
+  }, []);
+  const updateExchange = useCallback((id: string, data: Partial<TradingExchange>) =>
+    dispatch({ type: 'UPDATE_EXCHANGE', id, data }), []);
+  const deleteExchange = useCallback((id: string) => dispatch({ type: 'DELETE_EXCHANGE', id }), []);
+  const addExchangeFunds = useCallback((data: {
+    exchangeId: string; amount: number; source?: string; note?: string; date?: string;
+  }) => {
+    dispatch({
+      type: 'ADD_EXCHANGE_FUNDS',
+      payload: {
+        exchangeId: data.exchangeId,
+        amount: data.amount,
+        source: data.source ?? 'external',
+        note: data.note ?? '',
+        date: data.date ?? todayISO(),
+      },
+    });
+  }, []);
 
   const setTopPriorities = useCallback((taskIds: string[]) => {
     dispatch({ type: 'UPDATE_SETTINGS', data: { topPriorityTaskIds: taskIds.slice(0, 3) } });
@@ -711,6 +972,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addVisionItem, updateVisionItem, deleteVisionItem,
       addWeeklyReview, updateWeeklyReview,
       addFocusSession, addTrade, updateTrade, deleteTrade,
+      addAccount, updateAccount, deleteAccount, moveAccountMoney,
+      addExchange, updateExchange, deleteExchange, addExchangeFunds,
       setTopPriorities, toggleTopPriority,
       pushNotification, markNotificationRead, markAllNotificationsRead, dismissNotification, clearNotifications,
     }}>

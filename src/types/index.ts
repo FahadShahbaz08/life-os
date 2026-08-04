@@ -225,6 +225,35 @@ export interface FinanceIncome {
   createdAt: string;
 }
 
+export type FinanceAccountType = 'bank' | 'cash';
+
+/** Bank accounts and cash on hand balances */
+export interface FinanceAccount {
+  id: string;
+  name: string;
+  type: FinanceAccountType;
+  balance: number;
+  currency: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Intra-account transfers / deposits / withdrawals */
+export type AccountTransferKind = 'transfer' | 'deposit' | 'withdraw';
+
+export interface AccountTransfer {
+  id: string;
+  kind: AccountTransferKind;
+  fromAccountId: string | null;
+  toAccountId: string | null;
+  amount: number;
+  currency: string;
+  note: string;
+  date: string;
+  createdAt: string;
+}
+
 export interface VisionItem {
   id: string;
   type: VisionType;
@@ -270,15 +299,61 @@ export interface ActivityEntry {
 }
 
 export type TradeStatus = 'open' | 'closed';
+export type TradeMarket = 'spot' | 'futures';
+export type TradeSide = 'long' | 'short';
+
+/** Exchange wallet (Binance, Bybit, etc.) with available balance */
+export interface TradingExchange {
+  id: string;
+  name: string;
+  balance: number;
+  currency: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExchangeFunding {
+  id: string;
+  exchangeId: string;
+  amount: number;
+  source: string;
+  note: string;
+  date: string;
+  createdAt: string;
+}
 
 export interface Trade {
   id: string;
   pair: string;
-  investedAmount: number;
+  /** Spot buy/hold or leveraged futures */
+  market: TradeMarket;
+  /** Long = buy / bullish; short = sell / bearish */
+  side: TradeSide;
   currency: string;
+  exchangeId: string | null;
+  /**
+   * Capital locked on the exchange:
+   * - Spot: cash spent
+   * - Futures: margin posted (not full notional)
+   * Kept in sync with `margin` for account balance logic.
+   */
+  investedAmount: number;
+  /** Same as investedAmount (explicit futures naming) */
+  margin: number;
+  /** 1 for spot; e.g. 10, 25, 50 for futures */
+  leverage: number;
+  /** Optional size in coins/contracts */
+  quantity: number | null;
+  entryPrice: number | null;
+  exitPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  /** Total fees paid (open+close) */
+  fees: number;
+  profitLoss: number | null;
   openedAt: string;
   closedAt: string | null;
-  profitLoss: number | null;
   status: TradeStatus;
   notes: string;
   createdAt: string;
@@ -310,10 +385,14 @@ export interface AppState {
   payables: FinancePayable[];
   expenses: FinanceExpense[];
   incomes: FinanceIncome[];
+  accounts: FinanceAccount[];
+  accountTransfers: AccountTransfer[];
   visionItems: VisionItem[];
   weeklyReviews: WeeklyReview[];
   focusSessions: FocusSession[];
   trades: Trade[];
+  exchanges: TradingExchange[];
+  exchangeFundings: ExchangeFunding[];
   activity: ActivityEntry[];
   notifications: AppNotification[];
   settings: AppSettings;
