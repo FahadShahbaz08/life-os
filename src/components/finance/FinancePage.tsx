@@ -3,11 +3,12 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, ArrowDownLeft, ArrowUpRight, TrendingUp, HandCoins, Landmark,
-  Edit2, Filter, CheckCircle2,
+  Edit2, Filter, CheckCircle2, ArrowLeftRight,
 } from 'lucide-react';
 import {
   FinancePayableStatus, FinanceReceivableStatus, IncomeSource,
   FinanceExpense, FinanceIncome, FinancePayable, FinanceReceivable, FinanceAccount,
+  AccountTransfer,
 } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
@@ -20,10 +21,19 @@ import { computeExpensesByCategory } from '@/lib/chart-data';
 import { formatCurrency, formatDate, todayISO } from '@/lib/utils';
 import AccountsPanel from '@/components/finance/AccountsPanel';
 
-type Tab = 'overview' | 'accounts' | 'income' | 'expenses' | 'payables' | 'receivables' | 'categories';
+type Tab = 'overview' | 'accounts' | 'movements' | 'income' | 'expenses' | 'payables' | 'receivables' | 'categories';
+type MovementFilter = 'all' | 'transfer' | 'deposit' | 'withdraw';
 
 function normalizeCategoryLabel(label: string): string {
   return label.trim().replace(/\s+/g, ' ');
+}
+
+function remainingPayable(p: FinancePayable): number {
+  return Math.max(0, p.amount - (p.amountPaid ?? 0));
+}
+
+function remainingReceivable(r: FinanceReceivable): number {
+  return Math.max(0, r.amount - (r.amountCollected ?? 0));
 }
 
 /** Business start month: when the item first exists (created, or due date if earlier/later preference is create). */
@@ -92,10 +102,21 @@ export default function FinancePage() {
   const [month, setMonth] = useState(todayISO().slice(0, 7));
   const [expenseFilter, setExpenseFilter] = useState<string>('all');
   const [newCategory, setNewCategory] = useState('');
+  const [movementFilter, setMovementFilter] = useState<MovementFilter>('all');
 
   const categories = state.settings.expenseCategories?.length
     ? state.settings.expenseCategories
     : DEFAULT_EXPENSE_CATEGORIES;
+
+  const accounts = state.accounts ?? [];
+  const accountName = (id: string | null | undefined) => {
+    if (!id) return '—';
+    return accounts.find(a => a.id === id)?.name ?? 'Unknown';
+  };
+  const accountLabel = (id: string | null | undefined) => {
+    if (!id) return null;
+    return accounts.find(a => a.id === id)?.name ?? null;
+  };
 
   const addCategory = (raw: string) => {
     const label = normalizeCategoryLabel(raw);
@@ -149,8 +170,8 @@ export default function FinancePage() {
     () => state.payables.filter(p => isOpenInMonth(p, month, PAYABLE_OPEN)),
     [state.payables, month]
   );
-  const totalPayables = openPayables.reduce((s, p) => s + p.amount, 0);
-  const totalReceivables = openReceivables.reduce((s, r) => s + r.amount, 0);
+  const totalPayables = openPayables.reduce((s, p) => s + remainingPayable(p), 0);
+  const totalReceivables = openReceivables.reduce((s, r) => s + remainingReceivable(r), 0);
   const net = monthIncome - monthExpenses;
   const savingsRate = monthIncome > 0 ? Math.round((net / monthIncome) * 100) : 0;
 
@@ -161,15 +182,35 @@ export default function FinancePage() {
 
   const monthOnlyExpenses = state.expenses.filter(e => e.date.startsWith(month));
   const categoryChart = computeExpensesByCategory(monthOnlyExpenses);
-  const liquidTotal = (state.accounts ?? []).reduce((s, a) => s + a.balance, 0);
-  const accountLabel = (id: string | null | undefined) => {
-    if (!id) return null;
-    return (state.accounts ?? []).find(a => a.id === id)?.name ?? null;
-  };
+
+  const totalBank = accounts.filter(a => a.type === 'bank').reduce((s, a) => s + a.balance, 0);
+  const totalCash = accounts.filter(a => a.type === 'cash').reduce((s, a) => s + a.balance, 0);
+  const liquidTotal = totalBank + totalCash;
+  /** Liquid balance after open AR/AP obligations */
+  const netPosition = liquidTotal + totalReceivables - totalPayables;
+
+  const monthMovements = useMemo(() => {
+    const transfers = (state.accountTransfers ?? [])
+      .filter(t => (t.date || t.createdAt || '').startsWith(month))
+      .map(t => ({ ...t, sortKey: t.date || t.createdAt }));
+    return transfers.sort((a, b) => b.sortKey.localeCompare(a.sortKey) || b.createdAt.localeCompare(a.createdAt));
+  }, [state.accountTransfers, month]);
+
+  const filteredMovements = useMemo(
+    () => movementFilter === 'all'
+      ? monthMovements
+      : monthMovements.filter(m => m.kind === movementFilter),
+    [monthMovements, movementFilter],
+  );
+
+  const depositTotal = monthMovements.filter(m => m.kind === 'deposit').reduce((s, m) => s + m.amount, 0);
+  const withdrawTotal = monthMovements.filter(m => m.kind === 'withdraw').reduce((s, m) => s + m.amount, 0);
+  const transferTotal = monthMovements.filter(m => m.kind === 'transfer').reduce((s, m) => s + m.amount, 0);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'accounts', label: 'Banks & Cash' },
+    { id: 'movements', label: 'Movements' },
     { id: 'income', label: 'Income' },
     { id: 'expenses', label: 'Expenses' },
     { id: 'payables', label: 'Payables' },
@@ -231,30 +272,100 @@ export default function FinancePage() {
 
         {tab === 'overview' && (
           <>
+            {/* Remaining liquid balance hero */}
+            <div className="card p-5 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                <div>
+                  <p className="text-xs font-medium text-muted uppercase tracking-wide mb-1">Remaining balance</p>
+                  <p className="text-3xl font-bold font-display text-primary tabular-nums">
+                    {formatCurrency(liquidTotal)}
+                  </p>
+                  <p className="text-xs text-muted mt-1">
+                    Cash &amp; banks · current free money across all accounts
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-[10px] text-muted uppercase">In banks</p>
+                    <p className="font-semibold tabular-nums text-primary">{formatCurrency(totalBank)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted uppercase">Cash</p>
+                    <p className="font-semibold tabular-nums text-primary">{formatCurrency(totalCash)}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[10px] text-muted uppercase">Net vs AR/AP</p>
+                    <p className={`font-semibold tabular-nums ${netPosition >= 0 ? 'text-[var(--chart-pos)]' : 'text-[var(--chart-neg)]'}`}>
+                      {formatCurrency(netPosition)}
+                    </p>
+                    <p className="text-[10px] text-muted">liquid + receivable − payable</p>
+                  </div>
+                </div>
+              </div>
+              {accounts.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-subtle grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {accounts.slice(0, 6).map(a => (
+                    <div key={a.id} className="flex items-center justify-between text-xs gap-2">
+                      <span className="text-secondary truncate">{a.name}</span>
+                      <span className="tabular-nums font-medium text-primary shrink-0">{formatCurrency(a.balance)}</span>
+                    </div>
+                  ))}
+                  {accounts.length > 6 && (
+                    <button type="button" onClick={() => setTab('accounts')} className="text-[11px] text-accent text-left">
+                      +{accounts.length - 6} more in Banks &amp; Cash
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
               <StatCard icon={<ArrowDownLeft size={16} className="text-muted" />} label="Income" value={formatCurrency(monthIncome)} valueClass="text-primary" />
               <StatCard icon={<ArrowUpRight size={16} className="text-muted" />} label="Expenses" value={formatCurrency(monthExpenses)} valueClass="text-primary" />
               <StatCard icon={<TrendingUp size={16} className="text-muted" />} label="Net cashflow" value={formatCurrency(net)} valueClass={net >= 0 ? 'text-[var(--chart-pos)]' : 'text-[var(--chart-neg)]'} hint={`${savingsRate}% savings rate`} />
-              <StatCard icon={<Landmark size={16} className="text-muted" />} label="Banks + cash" value={formatCurrency(liquidTotal)} valueClass="text-primary" hint="See Banks & Cash tab" />
+              <StatCard icon={<Landmark size={16} className="text-muted" />} label="Remaining" value={formatCurrency(liquidTotal)} valueClass="text-primary" hint={`${formatCurrency(totalBank)} bank · ${formatCurrency(totalCash)} cash`} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
               <div className="card p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted">Open payables (you owe)</p>
+                  <p className="text-xs text-muted">Open payables remaining</p>
                   <p className="text-xl font-bold text-primary font-display">{formatCurrency(totalPayables)}</p>
-                  <p className="text-[11px] text-muted mt-0.5">{openPayables.length} open</p>
+                  <p className="text-[11px] text-muted mt-0.5">{openPayables.length} open · after partial pays</p>
                 </div>
                 <HandCoins size={22} className="text-muted" />
               </div>
               <div className="card p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted">Open receivables (owed to you)</p>
+                  <p className="text-xs text-muted">Open receivables remaining</p>
                   <p className="text-xl font-bold text-primary font-display">{formatCurrency(totalReceivables)}</p>
-                  <p className="text-[11px] text-muted mt-0.5">{openReceivables.length} open</p>
+                  <p className="text-[11px] text-muted mt-0.5">{openReceivables.length} open · still outstanding</p>
                 </div>
                 <ArrowDownLeft size={22} className="text-muted" />
               </div>
+            </div>
+
+            <div className="card p-5 mb-6">
+              <div className="flex items-center justify-between mb-3 gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold font-display text-primary">This month’s money movement</h3>
+                  <p className="text-xs text-muted">
+                    {monthMovements.length} ops · deposits {formatCurrency(depositTotal)} · withdraws {formatCurrency(withdrawTotal)} · transfers {formatCurrency(transferTotal)}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setTab('movements')} className="text-xs text-accent shrink-0">
+                  View all
+                </button>
+              </div>
+              {monthMovements.length === 0 ? (
+                <p className="text-sm text-muted py-2">No deposits, withdrawals, or transfers logged for this month.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {monthMovements.slice(0, 5).map(m => (
+                    <MovementRow key={m.id} m={m} accountName={accountName} compact />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card p-5 mb-6">
@@ -271,12 +382,74 @@ export default function FinancePage() {
                 {upcomingPayables.map(p => (
                   <div key={p.id} className="flex justify-between py-2 border-b border-subtle last:border-0 text-sm gap-3">
                     <span className="text-secondary truncate">{p.person}{p.notes ? ` — ${p.notes}` : ''}</span>
-                    <span className="text-red-400 font-medium shrink-0">{formatCurrency(p.amount)} · {formatDate(p.dueDate)}</span>
+                    <span className="text-red-400 font-medium shrink-0">
+                      {formatCurrency(remainingPayable(p))} · {formatDate(p.dueDate)}
+                    </span>
                   </div>
                 ))}
               </div>
             )}
           </>
+        )}
+
+        {tab === 'movements' && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-primary font-display">Money movements</h2>
+                <p className="text-xs text-muted">
+                  {month} · deposits, withdrawals, transfers, and payments linked to bank/cash
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  ['all', 'All'],
+                  ['deposit', 'Deposits'],
+                  ['withdraw', 'Withdrawals'],
+                  ['transfer', 'Transfers'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setMovementFilter(id)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border ${
+                      movementFilter === id ? 'bg-raised text-primary border-base' : 'border-transparent text-muted'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="card p-3">
+                <p className="text-[10px] text-muted uppercase">Deposits in</p>
+                <p className="text-sm font-bold text-emerald-400 tabular-nums">{formatCurrency(depositTotal)}</p>
+              </div>
+              <div className="card p-3">
+                <p className="text-[10px] text-muted uppercase">Withdrawals out</p>
+                <p className="text-sm font-bold text-primary tabular-nums">{formatCurrency(withdrawTotal)}</p>
+              </div>
+              <div className="card p-3">
+                <p className="text-[10px] text-muted uppercase">Intra transfers</p>
+                <p className="text-sm font-bold text-secondary tabular-nums">{formatCurrency(transferTotal)}</p>
+              </div>
+            </div>
+
+            {filteredMovements.length === 0 ? (
+              <p className="text-sm text-muted text-center py-12">
+                No movements this month{movementFilter !== 'all' ? ' in this filter' : ''}.
+                Record income/expense with an account, payables/receivables settlements, or transfers under Banks &amp; Cash.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {filteredMovements.map(m => (
+                  <MovementRow key={m.id} m={m} accountName={accountName} />
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {tab === 'accounts' && <AccountsPanel />}
@@ -481,7 +654,7 @@ export default function FinancePage() {
       {settlement && (
         <SettlementModal
           settlement={settlement}
-          accounts={state.accounts ?? []}
+          accounts={accounts}
           onClose={() => setSettlement(null)}
           onSave={d => {
             if (settlement.kind === 'payable') {
@@ -507,7 +680,7 @@ export default function FinancePage() {
       {(modal === 'income' || editingIncome) && (
         <IncomeModal
           initial={editingIncome}
-          accounts={state.accounts ?? []}
+          accounts={accounts}
           onClose={() => { setModal(null); setEditingIncome(null); }}
           onSave={d => {
             if (editingIncome) {
@@ -526,7 +699,7 @@ export default function FinancePage() {
         <ExpenseModal
           initial={editingExpense}
           categories={categories}
-          accounts={state.accounts ?? []}
+          accounts={accounts}
           onAddCategory={addCategory}
           onClose={() => { setModal(null); setEditingExpense(null); }}
           onSave={d => {
@@ -595,6 +768,56 @@ export default function FinancePage() {
         />
       )}
     </>
+  );
+}
+
+function MovementRow({
+  m,
+  accountName,
+  compact,
+}: {
+  m: AccountTransfer;
+  accountName: (id: string | null | undefined) => string;
+  compact?: boolean;
+}) {
+  const kindLabel =
+    m.kind === 'deposit' ? 'Deposit'
+      : m.kind === 'withdraw' ? 'Withdrawal'
+        : 'Transfer';
+  const route =
+    m.kind === 'transfer'
+      ? `${accountName(m.fromAccountId)} → ${accountName(m.toAccountId)}`
+      : m.kind === 'deposit'
+        ? `→ ${accountName(m.toAccountId)}`
+        : `← ${accountName(m.fromAccountId)}`;
+  const amountClass =
+    m.kind === 'deposit' ? 'text-emerald-400'
+      : m.kind === 'withdraw' ? 'text-primary'
+        : 'text-secondary';
+
+  return (
+    <div className={`card ${compact ? 'px-3 py-2' : 'p-4'} flex items-start justify-between gap-3`}>
+      <div className="min-w-0 flex gap-2">
+        <div className={`mt-0.5 shrink-0 ${
+          m.kind === 'deposit' ? 'text-emerald-400'
+            : m.kind === 'transfer' ? 'text-muted'
+              : 'text-secondary'
+        }`}>
+          {m.kind === 'transfer' ? <ArrowLeftRight size={14} /> : m.kind === 'deposit' ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
+        </div>
+        <div className="min-w-0">
+          <p className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-primary truncate`}>
+            {kindLabel}
+            {m.note ? ` · ${m.note}` : ''}
+          </p>
+          <p className="text-[11px] text-muted truncate">{route} · {formatDate(m.date)}</p>
+        </div>
+      </div>
+      <p className={`text-sm font-bold tabular-nums shrink-0 ${amountClass}`}>
+        {m.kind === 'withdraw' ? '−' : m.kind === 'deposit' ? '+' : ''}
+        {formatCurrency(m.amount)}
+      </p>
+    </div>
   );
 }
 
