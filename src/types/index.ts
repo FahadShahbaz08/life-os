@@ -123,6 +123,35 @@ export interface HabitCompletion {
   notes: string;
 }
 
+/** Customizable self-reflection checklist field (user-defined). */
+export type ReflectionFieldType = 'checkbox' | 'text' | 'number' | 'textarea';
+
+export interface ReflectionField {
+  id: string;
+  label: string;
+  type: ReflectionFieldType;
+  /** Hint for number fields, e.g. "pages" */
+  unit: string;
+  /** Optional target (e.g. 10 for "10 pages of books") */
+  target: number | null;
+  placeholder: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ReflectionFieldValue = boolean | string | number;
+
+/** One day of answers for the self-reflection template */
+export interface ReflectionEntry {
+  id: string;
+  date: string;
+  values: Record<string, ReflectionFieldValue>;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Note {
   id: string;
   areaId: string | null;
@@ -404,6 +433,8 @@ export interface AppState {
   goals: Goal[];
   habits: Habit[];
   habitCompletions: HabitCompletion[];
+  reflectionFields: ReflectionField[];
+  reflectionEntries: ReflectionEntry[];
   notes: Note[];
   reminders: Reminder[];
   waitingFor: WaitingFor[];

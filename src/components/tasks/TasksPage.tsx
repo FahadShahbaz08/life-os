@@ -8,14 +8,18 @@ import { useToastContext } from '@/context/ToastContext';
 import PageHeader from '@/components/ui/PageHeader';
 import TaskCard from '@/components/tasks/TaskCard';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
+import SelfReflectionPanel from '@/components/tasks/SelfReflectionPanel';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { isActiveTask, sortTasksByPriority } from '@/lib/utils';
 import { BTN_PRIMARY, BTN_TAB_ACTIVE, BTN_TAB_IDLE } from '@/lib/constants';
 
+type PageTab = 'tasks' | 'reflection';
+
 export default function TasksPage() {
   const { state, addTask, updateTask, deleteTask, toggleTopPriority, reorderTasks } = useApp();
   const { toast } = useToastContext();
+  const [pageTab, setPageTab] = useState<PageTab>('tasks');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
@@ -65,41 +69,73 @@ export default function TasksPage() {
   return (
     <>
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-8">
-        <PageHeader title="All Tasks" subtitle={`${state.tasks.filter(isActiveTask).length} active · drag grip to reorder`}
-          action={<button onClick={() => setShowForm(true)} className={BTN_PRIMARY}><Plus size={14} />New Task</button>}
+        <PageHeader
+          title={pageTab === 'tasks' ? 'All Tasks' : 'Self Reflection'}
+          subtitle={
+            pageTab === 'tasks'
+              ? `${state.tasks.filter(isActiveTask).length} active · drag grip to reorder`
+              : 'Daily checklist you design yourself'
+          }
+          action={
+            pageTab === 'tasks' ? (
+              <button onClick={() => setShowForm(true)} className={BTN_PRIMARY}><Plus size={14} />New Task</button>
+            ) : undefined
+          }
         />
 
-        <div className="flex gap-2 mb-6">
-          {(['active', 'completed', 'all'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 text-xs font-medium rounded-lg capitalize border ${filter === f ? BTN_TAB_ACTIVE : BTN_TAB_IDLE}`}>{f}</button>
+        <div className="flex gap-2 mb-6 flex-wrap">
+          {([
+            { id: 'tasks' as const, label: 'Tasks' },
+            { id: 'reflection' as const, label: 'Self Reflection' },
+          ]).map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setPageTab(t.id)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border ${pageTab === t.id ? BTN_TAB_ACTIVE : BTN_TAB_IDLE}`}
+            >
+              {t.label}
+            </button>
           ))}
         </div>
 
-        {tasks.length === 0 ? (
-          <EmptyState icon={ListTodo} title="No tasks" action={<button onClick={() => setShowForm(true)} className={BTN_PRIMARY}>Add task</button>} />
+        {pageTab === 'reflection' ? (
+          <SelfReflectionPanel />
         ) : (
-          <div className="space-y-2">
-            {tasks.map((task, index) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onEdit={() => setEditing(task)}
-                onDelete={() => { deleteTask(task.id); toast('Deleted', 'info'); }}
-                onToggleTopPriority={() => toggleTopPriority(task.id)}
-                onStatusToggle={() => handleStatusToggle(task)}
-                canReorder={canReorder}
-                isFirst={index === 0}
-                isLast={index === tasks.length - 1}
-                onMoveUp={() => moveTask(index, index - 1)}
-                onMoveDown={() => moveTask(index, index + 1)}
-                onDragStart={() => setDragId(task.id)}
-                onDragOver={e => { e.preventDefault(); if (dragId) setOverId(task.id); }}
-                onDrop={() => handleDrop(task.id)}
-                isDragOver={overId === task.id && dragId !== task.id}
-                isDragging={dragId === task.id}
-              />
-            ))}
-          </div>
+          <>
+            <div className="flex gap-2 mb-6">
+              {(['active', 'completed', 'all'] as const).map(f => (
+                <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 text-xs font-medium rounded-lg capitalize border ${filter === f ? BTN_TAB_ACTIVE : BTN_TAB_IDLE}`}>{f}</button>
+              ))}
+            </div>
+
+            {tasks.length === 0 ? (
+              <EmptyState icon={ListTodo} title="No tasks" action={<button onClick={() => setShowForm(true)} className={BTN_PRIMARY}>Add task</button>} />
+            ) : (
+              <div className="space-y-2">
+                {tasks.map((task, index) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onEdit={() => setEditing(task)}
+                    onDelete={() => { deleteTask(task.id); toast('Deleted', 'info'); }}
+                    onToggleTopPriority={() => toggleTopPriority(task.id)}
+                    onStatusToggle={() => handleStatusToggle(task)}
+                    canReorder={canReorder}
+                    isFirst={index === 0}
+                    isLast={index === tasks.length - 1}
+                    onMoveUp={() => moveTask(index, index - 1)}
+                    onMoveDown={() => moveTask(index, index + 1)}
+                    onDragStart={() => setDragId(task.id)}
+                    onDragOver={e => { e.preventDefault(); if (dragId) setOverId(task.id); }}
+                    onDrop={() => handleDrop(task.id)}
+                    isDragOver={overId === task.id && dragId !== task.id}
+                    isDragging={dragId === task.id}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

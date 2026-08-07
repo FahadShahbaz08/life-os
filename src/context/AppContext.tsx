@@ -7,6 +7,7 @@ import {
   HabitCompletion, Note, Reminder, WaitingFor, FinanceReceivable, FinancePayable,
   FinanceExpense, VisionItem, WeeklyReview, FocusSession, AppSettings, Trade, FinanceIncome,
   AppNotification, FinanceAccount, AccountTransfer, TradingExchange, ExchangeFunding,
+  ReflectionField, ReflectionEntry, ReflectionFieldValue,
 } from '@/types';
 import { loadState, saveState, createActivity, createEmptyState } from '@/lib/storage';
 import { generateId, nowISO } from '@/lib/utils';
@@ -99,6 +100,12 @@ type Action =
   | { type: 'DELETE_EXCHANGE'; id: string }
   | { type: 'ADD_EXCHANGE_FUNDS'; payload: { exchangeId: string; amount: number; source: string; note: string; date: string } }
   | { type: 'TOGGLE_HABIT_COMPLETION'; habitId: string; date: string }
+  | { type: 'ADD_REFLECTION_FIELD'; payload: ReflectionField }
+  | { type: 'UPDATE_REFLECTION_FIELD'; id: string; data: Partial<ReflectionField> }
+  | { type: 'DELETE_REFLECTION_FIELD'; id: string }
+  | { type: 'REORDER_REFLECTION_FIELDS'; orderedIds: string[] }
+  | { type: 'SET_REFLECTION_VALUE'; date: string; fieldId: string; value: ReflectionFieldValue }
+  | { type: 'SET_REFLECTION_NOTE'; date: string; note: string }
   | { type: 'ADD_NOTIFICATION'; payload: AppNotification }
   | { type: 'MARK_NOTIFICATION_READ'; id: string }
   | { type: 'MARK_ALL_NOTIFICATIONS_READ' }
@@ -683,6 +690,83 @@ function reducer(state: AppState, action: Action): AppState {
       }, createActivity('habit_completed', `Habit "${habit?.name ?? 'Habit'}" logged`, 'habit', action.habitId));
     }
 
+    case 'ADD_REFLECTION_FIELD':
+      return {
+        ...state,
+        reflectionFields: [...(state.reflectionFields ?? []), action.payload],
+      };
+    case 'UPDATE_REFLECTION_FIELD':
+      return {
+        ...state,
+        reflectionFields: (state.reflectionFields ?? []).map(f =>
+          f.id === action.id ? { ...f, ...action.data, updatedAt: nowISO() } : f,
+        ),
+      };
+    case 'DELETE_REFLECTION_FIELD': {
+      const fields = (state.reflectionFields ?? []).filter(f => f.id !== action.id);
+      const entries = (state.reflectionEntries ?? []).map(e => {
+        if (!(action.id in (e.values ?? {}))) return e;
+        const { [action.id]: _, ...values } = e.values;
+        return { ...e, values, updatedAt: nowISO() };
+      });
+      return { ...state, reflectionFields: fields, reflectionEntries: entries };
+    }
+    case 'REORDER_REFLECTION_FIELDS': {
+      const order = new Map(action.orderedIds.map((id, i) => [id, i]));
+      return {
+        ...state,
+        reflectionFields: [...(state.reflectionFields ?? [])]
+          .map(f => ({ ...f, sortOrder: order.has(f.id) ? (order.get(f.id) as number) : f.sortOrder, updatedAt: nowISO() }))
+          .sort((a, b) => a.sortOrder - b.sortOrder),
+      };
+    }
+    case 'SET_REFLECTION_VALUE': {
+      const now = nowISO();
+      const entries = state.reflectionEntries ?? [];
+      const existing = entries.find(e => e.date === action.date);
+      if (existing) {
+        return {
+          ...state,
+          reflectionEntries: entries.map(e =>
+            e.date === action.date
+              ? { ...e, values: { ...e.values, [action.fieldId]: action.value }, updatedAt: now }
+              : e,
+          ),
+        };
+      }
+      const entry: ReflectionEntry = {
+        id: generateId(),
+        date: action.date,
+        values: { [action.fieldId]: action.value },
+        note: '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { ...state, reflectionEntries: [entry, ...entries] };
+    }
+    case 'SET_REFLECTION_NOTE': {
+      const now = nowISO();
+      const entries = state.reflectionEntries ?? [];
+      const existing = entries.find(e => e.date === action.date);
+      if (existing) {
+        return {
+          ...state,
+          reflectionEntries: entries.map(e =>
+            e.date === action.date ? { ...e, note: action.note, updatedAt: now } : e,
+          ),
+        };
+      }
+      const entry: ReflectionEntry = {
+        id: generateId(),
+        date: action.date,
+        values: {},
+        note: action.note,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { ...state, reflectionEntries: [entry, ...entries] };
+    }
+
     case 'ADD_NOTIFICATION': {
       if (state.notifications.some(n => n.id === action.payload.id)) return state;
       return { ...state, notifications: [action.payload, ...state.notifications].slice(0, 100) };
@@ -753,6 +837,12 @@ export interface AppContextValue {
   updateHabit: (id: string, data: Partial<Habit>) => void;
   deleteHabit: (id: string) => void;
   toggleHabitCompletion: (habitId: string, date?: string) => void;
+  addReflectionField: (data: Omit<ReflectionField, 'id' | 'createdAt' | 'updatedAt' | 'sortOrder'> & { sortOrder?: number }) => void;
+  updateReflectionField: (id: string, data: Partial<ReflectionField>) => void;
+  deleteReflectionField: (id: string) => void;
+  reorderReflectionFields: (orderedIds: string[]) => void;
+  setReflectionValue: (date: string, fieldId: string, value: ReflectionFieldValue) => void;
+  setReflectionNote: (date: string, note: string) => void;
   addNote: (data: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateNote: (id: string, data: Partial<Note>) => void;
   deleteNote: (id: string) => void;
@@ -1054,6 +1144,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'TOGGLE_HABIT_COMPLETION', habitId, date: date ?? todayISO() });
   }, []);
 
+  const addReflectionField = useCallback((
+    data: Omit<ReflectionField, 'id' | 'createdAt' | 'updatedAt' | 'sortOrder'> & { sortOrder?: number },
+  ) => {
+    const maxOrder = (stateRef.current.reflectionFields ?? []).reduce((m, f) => Math.max(m, f.sortOrder), -1);
+    dispatch({
+      type: 'ADD_REFLECTION_FIELD',
+      payload: makeEntity<ReflectionField>({
+        ...data,
+        sortOrder: data.sortOrder ?? maxOrder + 1,
+      }),
+    });
+  }, []);
+  const updateReflectionField = useCallback((id: string, data: Partial<ReflectionField>) => {
+    dispatch({ type: 'UPDATE_REFLECTION_FIELD', id, data });
+  }, []);
+  const deleteReflectionField = useCallback((id: string) => {
+    dispatch({ type: 'DELETE_REFLECTION_FIELD', id });
+  }, []);
+  const reorderReflectionFields = useCallback((orderedIds: string[]) => {
+    dispatch({ type: 'REORDER_REFLECTION_FIELDS', orderedIds });
+  }, []);
+  const setReflectionValue = useCallback((date: string, fieldId: string, value: ReflectionFieldValue) => {
+    dispatch({ type: 'SET_REFLECTION_VALUE', date, fieldId, value });
+  }, []);
+  const setReflectionNote = useCallback((date: string, note: string) => {
+    dispatch({ type: 'SET_REFLECTION_NOTE', date, note });
+  }, []);
+
   const addNote = useCallback((data: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     dispatch({ type: 'ADD_NOTE', payload: makeEntity<Note>({ ...data, imageUrls: data.imageUrls ?? [] }) });
   }, []);
@@ -1303,6 +1421,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addInboxItem, updateInboxItem, deleteInboxItem, processInboxToTask, processInboxToNote,
       addGoal, updateGoal, deleteGoal,
       addHabit, updateHabit, deleteHabit, toggleHabitCompletion,
+      addReflectionField, updateReflectionField, deleteReflectionField, reorderReflectionFields,
+      setReflectionValue, setReflectionNote,
       addNote, updateNote, deleteNote,
       addReminder, updateReminder, deleteReminder,
       addWaitingFor, updateWaitingFor, deleteWaitingFor,
