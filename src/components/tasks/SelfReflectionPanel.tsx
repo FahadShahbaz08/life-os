@@ -21,6 +21,7 @@ const FIELD_TYPES: { value: ReflectionFieldType; label: string; hint: string }[]
 ];
 
 function isFieldComplete(field: ReflectionField, value: ReflectionFieldValue | undefined): boolean {
+  if (value === undefined || value === null) return false;
   if (field.type === 'checkbox') return value === true;
   if (field.type === 'number') {
     if (typeof value !== 'number' || Number.isNaN(value)) return false;
@@ -28,7 +29,7 @@ function isFieldComplete(field: ReflectionField, value: ReflectionFieldValue | u
     return value > 0;
   }
   if (typeof value === 'string') return value.trim().length > 0;
-  return value != null && value !== '';
+  return false;
 }
 
 export default function SelfReflectionPanel() {
