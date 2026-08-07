@@ -1,22 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
   Sun, Moon, ChevronLeft, Brain, LayoutGrid, Flag, FileText, Wallet, BookOpen,
   CalendarCheck, Telescope, Timer, Search, Plus, ListTodo, TrendingUp, FolderKanban, LogOut,
-  Cloud, CloudOff, RefreshCw,
+  Cloud, CloudOff, RefreshCw, Sparkles,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useApp } from '@/context/AppContext';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
 import { useToastContext } from '@/context/ToastContext';
 
-const MAIN_NAV = [
+const MAIN_NAV: { href: string; label: string; icon: typeof LayoutGrid }[] = [
   { href: '/', label: 'Today', icon: LayoutGrid },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
+  { href: '/tasks?view=reflection', label: 'Self Reflection', icon: Sparkles },
   { href: '/books', label: 'Books', icon: BookOpen },
   { href: '/finance', label: 'Finance', icon: Wallet },
   { href: '/trading', label: 'Trading', icon: TrendingUp },
@@ -37,8 +38,29 @@ export default function Sidebar() {
   const { toast } = useToastContext();
   const [collapsed, setCollapsed] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [query, setQuery] = useState('');
 
-  const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href);
+  // keep URL query in state so reflection nav can highlight after client navigation
+  useEffect(() => {
+    const sync = () => setQuery(typeof window !== 'undefined' ? window.location.search : '');
+    sync();
+    window.addEventListener('popstate', sync);
+    return () => window.removeEventListener('popstate', sync);
+  }, [pathname]);
+
+  const isActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    if (href.includes('view=reflection')) {
+      return pathname.startsWith('/tasks') && (query.includes('view=reflection') || (typeof window !== 'undefined' && window.location.search.includes('view=reflection')));
+    }
+    if (href === '/tasks') {
+      if (!pathname.startsWith('/tasks')) return false;
+      const onReflection = query.includes('view=reflection')
+        || (typeof window !== 'undefined' && window.location.search.includes('view=reflection'));
+      return !onReflection;
+    }
+    return pathname.startsWith(href.split('?')[0]);
+  };
 
   const syncLabel =
     !isOnline || syncStatus === 'offline' ? 'offline' :
@@ -79,10 +101,18 @@ export default function Sidebar() {
           )}
 
           {MAIN_NAV.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href} title={collapsed ? label : undefined}
+            <Link
+              key={href}
+              href={href}
+              title={collapsed ? label : undefined}
+              onClick={() => {
+                // highlight updates for query-based routes
+                setTimeout(() => setQuery(window.location.search), 0);
+              }}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm font-medium transition-colors mb-0.5 ${
-              isActive(href) ? 'bg-raised text-primary border border-base' : 'text-secondary hover:bg-raised hover:text-primary border border-transparent'
-              }`}>
+                isActive(href) ? 'bg-raised text-primary border border-base' : 'text-secondary hover:bg-raised hover:text-primary border border-transparent'
+              } ${!collapsed && href.includes('view=reflection') ? 'pl-8 text-xs' : ''}`}
+            >
               <Icon size={16} className="shrink-0" />
               {!collapsed && label}
             </Link>

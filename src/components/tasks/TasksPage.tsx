@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, ListTodo } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, ListTodo, Sparkles } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Task } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useToastContext } from '@/context/ToastContext';
@@ -19,13 +20,26 @@ type PageTab = 'tasks' | 'reflection';
 export default function TasksPage() {
   const { state, addTask, updateTask, deleteTask, toggleTopPriority, reorderTasks } = useApp();
   const { toast } = useToastContext();
-  const [pageTab, setPageTab] = useState<PageTab>('tasks');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const viewParam = searchParams.get('view');
+  const [pageTab, setPageTab] = useState<PageTab>(viewParam === 'reflection' ? 'reflection' : 'tasks');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [pendingComplete, setPendingComplete] = useState<Task | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPageTab(viewParam === 'reflection' ? 'reflection' : 'tasks');
+  }, [viewParam]);
+
+  const switchTab = (tab: PageTab) => {
+    setPageTab(tab);
+    const url = tab === 'reflection' ? '/tasks?view=reflection' : '/tasks';
+    router.replace(url, { scroll: false });
+  };
 
   const tasks = sortTasksByPriority(
     state.tasks.filter(t => {
@@ -69,6 +83,42 @@ export default function TasksPage() {
   return (
     <>
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-8">
+        {/* High-visibility page switcher — first thing on the page */}
+        <div
+          role="tablist"
+          aria-label="Tasks sections"
+          className="flex w-full p-1 mb-5 rounded-xl bg-raised border border-base gap-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pageTab === 'tasks'}
+            onClick={() => switchTab('tasks')}
+            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-semibold rounded-lg transition-colors ${
+              pageTab === 'tasks'
+                ? 'bg-surface text-primary shadow-sm border border-base'
+                : 'text-muted hover:text-secondary'
+            }`}
+          >
+            <ListTodo size={15} />
+            Tasks
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pageTab === 'reflection'}
+            onClick={() => switchTab('reflection')}
+            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-semibold rounded-lg transition-colors ${
+              pageTab === 'reflection'
+                ? 'bg-surface text-primary shadow-sm border border-base'
+                : 'text-muted hover:text-secondary'
+            }`}
+          >
+            <Sparkles size={15} />
+            Self Reflection
+          </button>
+        </div>
+
         <PageHeader
           title={pageTab === 'tasks' ? 'All Tasks' : 'Self Reflection'}
           subtitle={
@@ -82,22 +132,6 @@ export default function TasksPage() {
             ) : undefined
           }
         />
-
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {([
-            { id: 'tasks' as const, label: 'Tasks' },
-            { id: 'reflection' as const, label: 'Self Reflection' },
-          ]).map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setPageTab(t.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg border ${pageTab === t.id ? BTN_TAB_ACTIVE : BTN_TAB_IDLE}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
 
         {pageTab === 'reflection' ? (
           <SelfReflectionPanel />
@@ -154,8 +188,8 @@ export default function TasksPage() {
           variant="default"
           onConfirm={() => {
             updateTask(pendingComplete.id, { status: 'completed' });
-            toast('Done!');
             setPendingComplete(null);
+            toast('Completed');
           }}
           onCancel={() => setPendingComplete(null)}
         />
