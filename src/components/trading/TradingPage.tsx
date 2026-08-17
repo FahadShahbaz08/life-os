@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Trash2, Lock, Unlock, Building2, WalletCards, RefreshCw,
+  FlaskConical,
 } from 'lucide-react';
 import { Trade, TradeMarket, TradeSide, TradingExchange } from '@/types';
 import { useApp } from '@/context/AppContext';
@@ -26,8 +27,11 @@ import {
   otherQuote,
   type UsdtRateSnapshot,
 } from '@/lib/trading-currency';
+import TestTradePanel from '@/components/trading/TestTradePanel';
+import TradeHistoryPanel from '@/components/trading/TradeHistoryPanel';
 
 type ListFilter = 'all' | 'spot' | 'futures';
+type PageTab = 'journal' | 'test' | 'history';
 
 type Fx = {
   display: QuoteCurrency;
@@ -70,6 +74,7 @@ export default function TradingPage() {
   const [fundingExchange, setFundingExchange] = useState<TradingExchange | null>(null);
   const [deleteExchangeId, setDeleteExchangeId] = useState<string | null>(null);
   const [filter, setFilter] = useState<ListFilter>('all');
+  const [tab, setTab] = useState<PageTab>('journal');
   const [rateSnap, setRateSnap] = useState<UsdtRateSnapshot | null>(null);
   const [rateLoading, setRateLoading] = useState(true);
 
@@ -145,7 +150,7 @@ export default function TradingPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-8">
         <PageHeader
           title="Trading Journal"
-          subtitle="Spot & futures — switch PKR / USDT with live daily rate"
+          subtitle="Spot & futures — test setups, journal opens, keep closed-trade history"
           action={
             <div className="flex flex-wrap gap-2 items-center">
               <div className="flex rounded-lg border border-base overflow-hidden">
@@ -162,15 +167,46 @@ export default function TradingPage() {
                   </button>
                 ))}
               </div>
-              <button type="button" onClick={() => setShowAddExchange(true)} className="px-3 py-2 text-xs font-medium rounded-lg border border-base bg-raised text-secondary inline-flex items-center gap-1.5">
-                <Building2 size={13} /> Add exchange
-              </button>
-              <button type="button" onClick={() => setShowOpen(true)} className={BTN_PRIMARY}>
-                <Plus size={14} />Open Trade
-              </button>
+              {tab === 'journal' && (
+                <>
+                  <button type="button" onClick={() => setShowAddExchange(true)} className="px-3 py-2 text-xs font-medium rounded-lg border border-base bg-raised text-secondary inline-flex items-center gap-1.5">
+                    <Building2 size={13} /> Add exchange
+                  </button>
+                  <button type="button" onClick={() => setShowOpen(true)} className={BTN_PRIMARY}>
+                    <Plus size={14} />Open Trade
+                  </button>
+                </>
+              )}
             </div>
           }
         />
+
+        <div
+          role="tablist"
+          className="flex w-full p-1 mb-5 rounded-xl bg-raised border border-base gap-1"
+        >
+          {([
+            { id: 'journal' as const, label: 'Journal', icon: Unlock },
+            { id: 'test' as const, label: 'Test Trade', icon: FlaskConical },
+            { id: 'history' as const, label: 'History', icon: Lock },
+          ]).map(t => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                tab === t.id
+                  ? 'bg-surface text-primary shadow-sm border border-base'
+                  : 'text-muted hover:text-secondary'
+              }`}
+            >
+              <t.icon size={14} />
+              {t.label}
+            </button>
+          ))}
+        </div>
 
         {/* Rate bar */}
         <div className="card px-4 py-3 mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -196,6 +232,21 @@ export default function TradingPage() {
           </button>
         </div>
 
+        {tab === 'test' && (
+          <TestTradePanel display={display} rate={rate} />
+        )}
+
+        {tab === 'history' && (
+          <TradeHistoryPanel
+            trades={state.trades}
+            fx={fx}
+            exchangeName={exchangeName}
+            onDelete={id => setDeletingId(id)}
+          />
+        )}
+
+        {tab === 'journal' && (
+          <>
         {/* Totals dual */}
         <div className="card p-4 mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -324,9 +375,16 @@ export default function TradingPage() {
         )}
 
         <section>
-          <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Lock size={12} /> Trade History
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
+              <Lock size={12} /> Recent closed
+            </h2>
+            {closedTrades.length > 0 && (
+              <button type="button" onClick={() => setTab('history')} className="text-xs text-accent">
+                Full history
+              </button>
+            )}
+          </div>
           {closedTrades.length === 0 && openTrades.length === 0 ? (
             <EmptyState icon={TrendingUp} title="No trades yet"
               description="Open a futures or spot trade. Amounts follow your PKR/USDT switch."
@@ -336,7 +394,7 @@ export default function TradingPage() {
             <p className="text-sm text-muted">No closed trades in this filter.</p>
           ) : (
             <div className="space-y-2">
-              {closedTrades.map(trade => (
+              {closedTrades.slice(0, 5).map(trade => (
                 <TradeRow
                   key={trade.id}
                   trade={trade}
@@ -348,6 +406,8 @@ export default function TradingPage() {
             </div>
           )}
         </section>
+          </>
+        )}
       </div>
 
       {showOpen && (
@@ -537,6 +597,8 @@ function TradeRow({
             {market === 'futures' && <> · Notional ~{fx.fmt(notional, trade.currency)}</>}
             {trade.entryPrice != null && <> · Entry {trade.entryPrice}</>}
             {trade.exitPrice != null && <> · Exit {trade.exitPrice}</>}
+            {trade.stopLoss != null && <> · SL {trade.stopLoss}</>}
+            {trade.takeProfit != null && <> · TP {trade.takeProfit}</>}
           </p>
           <p className="text-[11px] text-muted mt-0.5">
             Opened {formatDateTime(trade.openedAt)}
