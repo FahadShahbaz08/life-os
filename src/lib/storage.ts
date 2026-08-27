@@ -4,7 +4,7 @@ import {
   FinancePayable, FinanceReceivable, FinanceSettlement,
 } from '@/types';
 import { generateId } from './utils';
-import { createDefaultAreas, STORAGE_KEY, LEGACY_STORAGE_KEY, DEFAULT_EXPENSE_CATEGORIES } from './constants';
+import { createDefaultAreas, STORAGE_KEY, DIRTY_KEY, LEGACY_STORAGE_KEY, DEFAULT_EXPENSE_CATEGORIES } from './constants';
 
 const DEFAULT_SETTINGS: AppSettings = {
   topPriorityTaskIds: [],
@@ -393,6 +393,25 @@ export function saveState(state: AppState): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
     console.error('Life OS: failed to save to localStorage', err);
+  }
+}
+
+export function isDirty(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(DIRTY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setDirty(dirty: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (dirty) localStorage.setItem(DIRTY_KEY, '1');
+    else localStorage.removeItem(DIRTY_KEY);
+  } catch {
+    // ignore quota / private mode
   }
 }
 

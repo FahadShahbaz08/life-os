@@ -2,6 +2,7 @@ import { Area, IncomeSource, NoteCategory } from '@/types';
 import { generateId } from './utils';
 
 export const STORAGE_KEY = 'lifeos_data';
+export const DIRTY_KEY = 'lifeos_dirty';
 export const LEGACY_STORAGE_KEY = 'taskflow_data';
 export const DEFAULT_CURRENCY = 'PKR';
 

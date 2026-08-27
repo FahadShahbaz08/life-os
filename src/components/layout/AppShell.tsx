@@ -1,12 +1,16 @@
 'use client';
 
+import { useState } from 'react';
+import { LayoutGrid } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import Sidebar from './Sidebar';
+import MobileDock from './MobileDock';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import { WifiOff, RefreshCw } from 'lucide-react';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { hydrated, isOnline, syncStatus, forceSync } = useApp();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   if (!hydrated) {
     return (
@@ -22,8 +26,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-screen flex overflow-hidden bg-base min-h-0 relative z-10">
       <Sidebar />
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden pb-16 md:pb-0">
-        <header className="shrink-0 relative z-[100] flex items-center justify-end gap-2 px-4 sm:px-6 py-2 border-b border-subtle bg-surface/40 backdrop-blur-sm">
+      <MobileDock menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} />
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
+        <header className="shrink-0 relative z-[100] flex items-center justify-between gap-2 px-4 sm:px-6 py-2 border-b border-subtle bg-surface/40 backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            className="lg:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary bg-raised border border-base rounded-lg touch-manipulation"
+          >
+            <LayoutGrid size={14} />
+            Menu
+          </button>
+          <div className="flex items-center justify-end gap-2 ml-auto">
           {(!isOnline || syncStatus === 'offline') && (
             <button
               onClick={forceSync}
@@ -44,6 +58,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           )}
           <NotificationBell />
+          </div>
         </header>
         <div className="flex-1 min-h-0 overflow-y-auto os-scroll relative">
           {children}

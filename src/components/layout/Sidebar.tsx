@@ -5,30 +5,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
-  Sun, Moon, ChevronLeft, Brain, LayoutGrid, Flag, FileText, Wallet, BookOpen,
-  CalendarCheck, Telescope, Timer, Search, Plus, ListTodo, TrendingUp, FolderKanban, LogOut,
-  Cloud, CloudOff, RefreshCw, Sparkles,
+  Sun, Moon, ChevronLeft, Brain, Plus, LogOut, Cloud, CloudOff, RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useApp } from '@/context/AppContext';
 import TaskForm, { taskFormToEntity } from '@/components/tasks/TaskForm';
 import { useToastContext } from '@/context/ToastContext';
-
-const MAIN_NAV = [
-  { href: '/', label: 'Today', icon: LayoutGrid },
-  { href: '/tasks', label: 'Tasks', icon: ListTodo },
-  { href: '/reflection', label: 'Self Reflection', icon: Sparkles },
-  { href: '/books', label: 'Books', icon: BookOpen },
-  { href: '/finance', label: 'Finance', icon: Wallet },
-  { href: '/trading', label: 'Trading', icon: TrendingUp },
-  { href: '/projects', label: 'Projects', icon: FolderKanban },
-  { href: '/goals', label: 'Goals', icon: Flag },
-  { href: '/notes', label: 'Notes', icon: FileText },
-  { href: '/review', label: 'Performance', icon: CalendarCheck },
-  { href: '/search', label: 'Search', icon: Search },
-  { href: '/vision', label: 'Life Vision', icon: Telescope },
-  { href: '/focus-session', label: 'Timer', icon: Timer },
-];
+import { MAIN_NAV } from './nav';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -49,7 +32,7 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className={`hidden md:flex flex-col h-full min-h-0 bg-surface/90 backdrop-blur-sm border-r border-base transition-all duration-300 shrink-0 ${collapsed ? 'w-14' : 'w-60'}`}>
+      <aside className={`hidden lg:flex flex-col h-full min-h-0 bg-surface/90 backdrop-blur-sm border-r border-base transition-all duration-300 shrink-0 ${collapsed ? 'w-14' : 'w-60'}`}>
         <div className="flex items-center justify-between px-3 py-3.5 border-b border-base">
           {collapsed ? (
             <button onClick={() => setCollapsed(false)} className="mx-auto">
@@ -125,28 +108,6 @@ export default function Sidebar() {
           </button>
         </div>
       </aside>
-
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-base z-40 px-1 py-1">
-        <div className="flex items-center justify-around">
-          {[
-            { href: '/', icon: LayoutGrid, label: 'Today' },
-            { href: '/tasks', icon: ListTodo, label: 'Tasks' },
-            { href: '/reflection', icon: Sparkles, label: 'Reflect' },
-            { href: '/finance', icon: Wallet, label: 'Finance' },
-            { href: '/trading', icon: TrendingUp, label: 'Trading' },
-          ].map(({ href, icon: Icon, label }) => (
-            <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 px-2 py-1.5 ${isActive(href) ? 'text-accent' : 'text-muted'}`}>
-              <Icon size={18} /><span className="text-[9px] font-medium">{label}</span>
-            </Link>
-          ))}
-          <button onClick={() => setShowTaskForm(true)} className="flex flex-col items-center gap-0.5 px-2 py-1.5">
-            <div className="w-8 h-8 bg-[var(--accent)] rounded-lg flex items-center justify-center">
-              <Plus size={16} className="text-[var(--bg-base)]" />
-            </div>
-            <span className="text-[9px] font-medium text-muted">Add</span>
-          </button>
-        </div>
-      </nav>
 
       {showTaskForm && (
         <TaskForm

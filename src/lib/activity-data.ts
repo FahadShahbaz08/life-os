@@ -1,5 +1,6 @@
 import {
-  eachDayOfInterval, endOfMonth, format, getDay, parseISO, startOfMonth, subMonths, addMonths,
+  eachDayOfInterval, endOfMonth, endOfWeek, format, getDay, parseISO, startOfMonth, startOfWeek,
+  subMonths, addMonths, subWeeks,
 } from 'date-fns';
 import { AppState, CompletionEvent } from '@/types';
 
@@ -98,6 +99,36 @@ export function getMonthOptions(count = 12): { key: string; label: string; date:
 
 export function shiftMonth(monthDate: Date, delta: number): Date {
   return delta < 0 ? subMonths(monthDate, Math.abs(delta)) : addMonths(monthDate, delta);
+}
+
+export interface HeatmapDay {
+  date: string;
+  count: number;
+  inFuture: boolean;
+}
+
+/** GitHub-style columns (weeks) x 7 rows (Mon–Sun), oldest week first. */
+export function buildHeatmapWeeks(state: AppState, weekCount = 20): HeatmapDay[][] {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const todayKey = format(today, 'yyyy-MM-dd');
+  const rangeStart = startOfWeek(subWeeks(today, weekCount - 1), { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: rangeStart, end: endOfWeek(today, { weekStartsOn: 1 }) });
+  const events = getCompletionEvents(state);
+  const counts = new Map<string, number>();
+  events.forEach(e => {
+    const key = e.timestamp.slice(0, 10);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+
+  const cells: HeatmapDay[] = days.map(day => {
+    const date = format(day, 'yyyy-MM-dd');
+    return { date, count: counts.get(date) ?? 0, inFuture: date > todayKey };
+  });
+
+  const weeks: HeatmapDay[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
 }
 
 export function groupEventsByDay(events: CompletionEvent[]): { date: string; label: string; events: CompletionEvent[] }[] {

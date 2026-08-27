@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import InboxPage from '@/components/inbox/InboxPage';
 
-export default function InboxPage() {
-  redirect('/tasks');
+export default function Page() {
+  return <InboxPage />;
 }

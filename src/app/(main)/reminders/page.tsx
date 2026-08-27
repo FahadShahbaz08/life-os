@@ -1,2 +1,5 @@
-import { redirect } from 'next/navigation';
-export default function Page() { redirect('/'); }
+import RemindersPage from '@/components/reminders/RemindersPage';
+
+export default function Page() {
+  return <RemindersPage />;
+}

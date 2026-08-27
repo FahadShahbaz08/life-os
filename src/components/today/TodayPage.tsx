@@ -18,6 +18,7 @@ import { exportData, importData } from '@/lib/storage';
 import { requestNotificationPermission } from '@/lib/notifications';
 import { BTN_PRIMARY, BTN_SECONDARY } from '@/lib/constants';
 import { DayQueueItem, Task } from '@/types';
+import ActivityHeatmap from '@/components/activity/ActivityHeatmap';
 
 const REASON_STYLE: Record<string, string> = {
   overdue: 'text-red-400 bg-red-500/10 border-red-500/20',
@@ -132,6 +133,8 @@ export default function TodayPage() {
             </div>
           }
         />
+
+        <ActivityHeatmap />
 
         <section className="mb-6">
           <div className="flex items-center justify-between mb-3">

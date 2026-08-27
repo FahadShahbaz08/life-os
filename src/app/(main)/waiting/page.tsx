@@ -1,2 +1,5 @@
-import { redirect } from 'next/navigation';
-export default function Page() { redirect('/'); }
+import WaitingPage from '@/components/waiting/WaitingPage';
+
+export default function Page() {
+  return <WaitingPage />;
+}

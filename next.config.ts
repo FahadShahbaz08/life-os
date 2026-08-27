@@ -1,7 +1,21 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // No custom output — Vercel handles Next.js builds natively
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
+      },
+      {
+        source: '/((?!api/).*)',
+        headers: [{
+          key: 'Cache-Control',
+          value: 'public, max-age=30, stale-while-revalidate=86400, stale-if-error=604800',
+        }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -9,7 +9,7 @@ import {
   AppNotification, FinanceAccount, AccountTransfer, TradingExchange, ExchangeFunding,
   ReflectionField, ReflectionEntry, ReflectionFieldValue,
 } from '@/types';
-import { loadState, saveState, createActivity, createEmptyState } from '@/lib/storage';
+import { loadState, saveState, createActivity, createEmptyState, isDirty, setDirty } from '@/lib/storage';
 import { generateId, nowISO } from '@/lib/utils';
 
 type Action =
@@ -929,10 +929,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setSyncStatus('offline');
       pendingSync.current = true;
+      setDirty(true);
       return false;
     }
     if (syncInFlight.current) {
       pendingSync.current = true;
+      setDirty(true);
       return false;
     }
     syncInFlight.current = true;
@@ -947,10 +949,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error('save failed');
       setSyncStatus('saved');
       pendingSync.current = false;
+      setDirty(false);
       return true;
     } catch {
       setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error');
       pendingSync.current = true;
+      setDirty(true);
       saveState(payload);
       return false;
     } finally {
@@ -977,6 +981,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setIsOnline(false);
       setSyncStatus('offline');
       pendingSync.current = true;
+      setDirty(true);
     };
 
     setIsOnline(navigator.onLine);
@@ -999,7 +1004,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(id);
   }, [status, hydrated, pushToCloud]);
 
-  // Load data from cloud when authenticated
+  // Load data: prefer unsynced local writes over cloud so offline adds survive
   useEffect(() => {
     if (status === 'loading') return;
 
@@ -1010,6 +1015,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
+
+    const hydrateLocalAndPush = () => {
+      const local = loadState();
+      dispatch({ type: 'HYDRATE', payload: local });
+      skipNextSave.current = true;
+      pendingSync.current = true;
+      setDirty(true);
+      setHydrated(true);
+      void pushToCloud(local);
+    };
+
+    if (isDirty()) {
+      hydrateLocalAndPush();
+      return;
+    }
+
     fetch('/api/sync')
       .then(res => {
         if (!res.ok) throw new Error('Failed to load');
@@ -1019,21 +1040,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           dispatch({ type: 'HYDRATE', payload: data });
           skipNextSave.current = true;
+          setDirty(false);
+          setHydrated(true);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          dispatch({ type: 'HYDRATE', payload: loadState() });
-          pendingSync.current = true;
-          setSyncStatus(navigator.onLine ? 'error' : 'offline');
+          hydrateLocalAndPush();
         }
-      })
-      .finally(() => {
-        if (!cancelled) setHydrated(true);
       });
 
     return () => { cancelled = true; };
-  }, [status]);
+  }, [status, pushToCloud]);
 
   // Auto-save (debounced) + always keep localStorage warm
   useEffect(() => {
@@ -1046,6 +1064,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       skipNextSave.current = false;
       return;
     }
+
+    setDirty(true);
+    pendingSync.current = true;
 
     const timer = setTimeout(() => {
       void pushToCloud(state);
