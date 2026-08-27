@@ -34,7 +34,7 @@ export default function BookReader({ bookId }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadHint, setLoadHint] = useState('Opening book…');
   const [rendering, setRendering] = useState(false);
-  const [showPanel, setShowPanel] = useState(true);
+  const [showPanel, setShowPanel] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [selectedText, setSelectedText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -382,15 +382,15 @@ export default function BookReader({ bookId }: Props) {
           <button type="button" disabled={!!numPages && page >= numPages} onClick={() => goTo(page + 1)} className="p-2 rounded-lg border border-base text-secondary disabled:opacity-30 hover:bg-raised">
             <ChevronRight size={16} />
           </button>
-          <button type="button" onClick={() => setShowPanel(v => !v)} className="p-2 rounded-lg border border-base text-secondary hover:bg-raised" title="Notes panel">
+          <button type="button" onClick={() => setShowPanel(v => !v)} className={`p-2 rounded-lg border text-secondary hover:bg-raised ${showPanel ? 'border-accent bg-raised text-primary' : 'border-base'}`} title="Notes">
             <List size={16} />
           </button>
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row relative">
         <div
-          className="flex-1 min-w-0 min-h-0 overflow-auto os-scroll bg-base order-1 sm:order-none"
+          className="flex-1 min-w-0 min-h-0 overflow-auto os-scroll bg-base"
           ref={containerRef}
         >
           <div className="min-h-full flex justify-center items-start" onMouseUp={captureSelection}>
@@ -405,7 +405,14 @@ export default function BookReader({ bookId }: Props) {
         </div>
 
         {showPanel && (
-          <aside className="w-full sm:w-72 lg:w-80 shrink-0 border-t sm:border-t-0 sm:border-l border-base bg-surface flex flex-col min-h-0 h-[38vh] sm:h-auto sm:max-h-none order-2">
+          <>
+            <button
+              type="button"
+              aria-label="Close notes"
+              className="lg:hidden absolute inset-0 z-20 bg-overlay-backdrop"
+              onClick={() => setShowPanel(false)}
+            />
+            <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[42vh] rounded-t-2xl shadow-2xl border-t pb-[env(safe-area-inset-bottom)] lg:static lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:shadow-none lg:w-72 xl:w-80 lg:pb-0 lg:border-t-0 lg:border-l shrink-0 border-base bg-surface flex flex-col min-h-0">
             <div className="p-3 border-b border-base shrink-0">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">On this page</h2>
               {selectedText && (
@@ -461,6 +468,7 @@ export default function BookReader({ bookId }: Props) {
               ))}
             </div>
           </aside>
+          </>
         )}
       </div>
     </div>
