@@ -31,22 +31,22 @@ export default function ActivityHeatmap() {
         </div>
         <Link href="/review" className="text-[11px] text-secondary hover:text-primary shrink-0">Review →</Link>
       </div>
-      <div className="flex gap-2 overflow-x-auto os-scroll pb-1">
-        <div className="flex flex-col justify-between py-[1px] shrink-0 text-[8px] text-muted leading-none h-[88px]">
+      <div className="flex gap-1.5 w-full items-stretch">
+        <div className="flex flex-col justify-between py-px shrink-0 text-[8px] text-muted leading-none">
           {WEEKDAYS.map((d, i) => (
             <span key={i} className={i % 2 === 1 ? 'invisible' : ''}>{d}</span>
           ))}
         </div>
-        <div className="flex gap-[3px] min-w-0">
+        <div className="flex-1 min-w-0 flex gap-[3px]">
           {weeks.map((week, wi) => (
-            <div key={wi} className="flex flex-col gap-[3px]">
+            <div key={wi} className="flex-1 min-w-0 flex flex-col gap-[3px]">
               {week.map(cell => {
                 const level = cell.inFuture ? 0 : getContributionLevel(cell.count);
                 return (
                   <div
                     key={cell.date}
                     title={`${format(parseISO(cell.date), 'MMM d')}: ${cell.count} completion${cell.count === 1 ? '' : 's'}`}
-                    className={`w-2.5 h-2.5 rounded-[2px] ${cell.inFuture ? 'opacity-20' : ''} ${LEVEL_CLASS[level]}`}
+                    className={`w-full aspect-square rounded-[2px] ${cell.inFuture ? 'opacity-20' : ''} ${LEVEL_CLASS[level]}`}
                   />
                 );
               })}

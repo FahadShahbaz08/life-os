@@ -42,7 +42,7 @@ export default function TaskCard({
   if (compact) {
     return (
       <div
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-base ${done ? 'opacity-60' : ''} ${isDragOver ? 'border-primary bg-raised' : ''} ${isDragging ? 'opacity-40' : ''}`}
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-base min-w-0 w-full ${done ? 'opacity-60' : ''} ${isDragOver ? 'border-primary bg-raised' : ''} ${isDragging ? 'opacity-40' : ''}`}
         onDragOver={onDragOver}
         onDrop={e => { e.preventDefault(); onDrop?.(); }}
       >
@@ -61,7 +61,7 @@ export default function TaskCard({
         <button onClick={onStatusToggle} className={`shrink-0 ${done ? 'text-[var(--chart-pos)]' : 'text-muted hover:text-primary'}`}>
           <StatusIcon size={16} />
         </button>
-        <span className={`flex-1 text-sm truncate ${done ? 'line-through text-muted' : 'text-primary'}`}>{task.title}</span>
+        <span className={`flex-1 min-w-0 text-sm break-all ${done ? 'line-through text-muted' : 'text-primary'}`}>{task.title}</span>
         {task.isTopPriority && <Star size={12} className="text-amber-400 fill-amber-400 shrink-0" />}
         <PriorityBadge priority={task.priority} />
       </div>
@@ -70,7 +70,7 @@ export default function TaskCard({
 
   return (
     <div
-      className={`bg-surface rounded-lg border transition-all ${
+      className={`bg-surface rounded-lg border transition-all min-w-0 w-full overflow-hidden ${
         done ? 'border-base opacity-60' : overdue ? 'border-red-500/25 bg-red-500/[0.03]' : 'border-base hover:border-[var(--border)]'
       } ${isDragOver ? 'border-primary ring-1 ring-[var(--accent)]/20' : ''} ${isDragging ? 'opacity-40' : ''}`}
       onDragOver={onDragOver}
@@ -116,11 +116,11 @@ export default function TaskCard({
             <StatusIcon size={17} />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className={`text-sm font-medium leading-snug ${done ? 'line-through text-muted' : 'text-primary'}`}>{task.title}</p>
+            <div className="flex items-start gap-2 min-w-0">
+              <p className={`text-sm font-medium leading-snug break-all min-w-0 ${done ? 'line-through text-muted' : 'text-primary'}`}>{task.title}</p>
               {task.isTopPriority && <Star size={12} className="text-amber-400 fill-amber-400 shrink-0" />}
             </div>
-            {task.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{task.description}</p>}
+            {task.description && <p className="text-xs text-muted mt-0.5 line-clamp-1 break-all">{task.description}</p>}
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <PriorityBadge priority={task.priority} />
               <TaskStatusBadge status={task.status} />
@@ -155,7 +155,7 @@ export default function TaskCard({
         </div>
         {expanded && (task.description || task.progressNotes) && (
           <div className="mt-3 pl-7 space-y-2 border-t border-subtle pt-3">
-            {task.description && <p className="text-xs text-secondary leading-relaxed">{task.description}</p>}
+            {task.description && <p className="text-xs text-secondary leading-relaxed break-all">{task.description}</p>}
             {task.progressNotes && <p className="text-xs text-secondary leading-relaxed whitespace-pre-line">{task.progressNotes}</p>}
           </div>
         )}

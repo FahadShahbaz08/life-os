@@ -109,7 +109,7 @@ export default function TodayPage() {
 
   return (
     <>
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-8 animate-in">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-8 animate-in min-w-0 w-full">
         <PageHeader
           title={`${getGreeting()}${name ? `, ${name}` : ''}`}
           subtitle={`${today} · Your action list for today`}
@@ -151,7 +151,7 @@ export default function TodayPage() {
               <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-md border mb-2 ${REASON_STYLE[heroItem.reason]}`}>
                 {dayQueueReasonLabel(heroItem.reason)}
               </span>
-              <h3 className="text-lg font-bold font-display text-primary mb-4">{hero.title}</h3>
+              <h3 className="text-lg font-bold font-display text-primary mb-4 break-all">{hero.title}</h3>
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => requestComplete(hero)} className={BTN_PRIMARY}>
                   Mark Done

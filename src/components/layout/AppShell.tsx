@@ -60,7 +60,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <NotificationBell />
           </div>
         </header>
-        <div className="flex-1 min-h-0 overflow-y-auto os-scroll relative">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden os-scroll relative">
           {children}
         </div>
       </main>

@@ -64,7 +64,7 @@ export default function TasksPage() {
 
   return (
     <>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-8">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-8 min-w-0 w-full">
         <PageHeader
           title="All Tasks"
           subtitle={`${state.tasks.filter(isActiveTask).length} active · drag grip to reorder`}
