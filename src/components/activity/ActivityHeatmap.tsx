@@ -23,7 +23,7 @@ export default function ActivityHeatmap() {
   const activeDays = weeks.flat().filter(d => !d.inFuture && d.count > 0).length;
 
   return (
-    <section className="card p-4 mb-6">
+    <section className="card p-4 mb-6 lg:hidden">
       <div className="flex items-center justify-between gap-2 mb-3">
         <div>
           <h2 className="text-sm font-semibold font-display text-primary">Activity</h2>
