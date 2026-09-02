@@ -5,15 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "desktop": "npm --prefix desktop start",
-    "desktop:build": "npm --prefix desktop run build",
-    "android:sync": "npx cap sync android",
-    "android:open": "npx cap open android"
+    "start": "next start"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/core": "^8.5.0",
     "bcryptjs": "^3.0.2",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.17.0",
@@ -26,7 +20,6 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",

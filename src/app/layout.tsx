@@ -5,31 +5,16 @@ import { ToastProvider } from '@/context/ToastContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import AuthProvider from '@/components/providers/AuthProvider';
 import NotificationManager from '@/components/notifications/NotificationManager';
-import OfflineWarm from '@/components/providers/OfflineWarm';
 
 export const metadata: Metadata = {
   title: 'Life OS — Personal Life Operating System',
   description: 'Your external brain. Capture, organize, prioritize, and review every area of your life.',
-  manifest: '/manifest.webmanifest',
-  icons: {
-    icon: '/icon.svg',
-    apple: '/icon.svg',
-  },
-  appleWebApp: {
-    capable: true,
-    title: 'Life OS',
-    statusBarStyle: 'black-translucent',
-  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fafafa' },
-    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
-  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -46,7 +31,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <AppProvider>
               <ToastProvider>
                 <NotificationManager />
-                <OfflineWarm />
                 {children}
               </ToastProvider>
             </AppProvider>
